@@ -33,7 +33,8 @@ function Download-File {
         if ($dir -and !(Test-Path $dir)) {
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
         }
-        [System.IO.File]::WriteAllText($OutputPath, $response.Content, [System.Text.Encoding]::UTF8)
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($OutputPath, $response.Content, $utf8NoBom)
         return $true
     }
     catch {
