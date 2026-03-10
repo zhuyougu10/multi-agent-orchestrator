@@ -66,26 +66,36 @@ function Install-Superpowers {
         Remove-Item $tempSuperpowers -Recurse -Force
     }
     New-Item -ItemType Directory -Force -Path $tempSuperpowers | Out-Null
-    New-Item -ItemType Directory -Force -Path "$tempSuperpowers\skills" | Out-Null
     
-    $success = $true
+    $success = Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path ".opencode/plugins/superpowers.js" -OutputPath "$tempSuperpowers\superpowers.js"
     
-    $success = (Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path ".opencode/plugins/superpowers.js" -OutputPath "$tempSuperpowers\superpowers.js") -and $success
+    $skillsDir = Join-Path $tempSuperpowers "skills"
+    New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
     
-    $skillsFiles = @(
-        "skills/superpowers.md",
-        "skills/ask-user-question.md",
-        "skills/exit-plan-mode.md",
-        "skills/notify-user.md"
+    $superpowersSkills = @(
+        "brainstorming",
+        "dispatching-parallel-agents",
+        "executing-plans",
+        "finishing-a-development-branch",
+        "receiving-code-review",
+        "requesting-code-review",
+        "subagent-driven-development",
+        "systematic-debugging",
+        "test-driven-development",
+        "using-git-worktrees",
+        "using-superpowers",
+        "verification-before-completion",
+        "writing-plans",
+        "writing-skills"
     )
     
-    foreach ($file in $skillsFiles) {
-        $fileName = Split-Path $file -Leaf
-        $result = Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path $file -OutputPath "$tempSuperpowers\skills\$fileName"
-        if (-not $result) {
-            Write-Host "  [INFO] Trying alternative path..." -ForegroundColor Gray
-            $result = Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path "$file" -OutputPath "$tempSuperpowers\skills\$fileName"
-        }
+    foreach ($skill in $superpowersSkills) {
+        $skillDir = Join-Path $skillsDir $skill
+        New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
+        
+        $result = Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path "skills/$skill/SKILL.md" -OutputPath "$skillDir\SKILL.md"
+        
+        Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path "skills/$skill/references" -OutputPath "$skillDir\references" | Out-Null
     }
     
     Remove-Item "$OpenCodeHome\plugins\superpowers.js" -Force -ErrorAction SilentlyContinue
@@ -101,18 +111,23 @@ function Install-Superpowers {
         }
     }
     
-    if (Test-Path "$tempSuperpowers\skills") {
-        $skillsDir = Join-Path $OpenCodeHome "skills\superpowers"
+    if (Test-Path $skillsDir) {
+        $destSkillsDir = Join-Path $OpenCodeHome "skills\superpowers"
         New-Item -ItemType Junction `
-            -Path $skillsDir `
-            -Target "$tempSuperpowers\skills" -ErrorAction SilentlyContinue | Out-Null
+            -Path $destSkillsDir `
+            -Target $skillsDir -ErrorAction SilentlyContinue | Out-Null
         
-        if (!(Test-Path $skillsDir)) {
-            Copy-Item "$tempSuperpowers\skills" $skillsDir -Recurse -Force
+        if (!(Test-Path $destSkillsDir)) {
+            Copy-Item $skillsDir $destSkillsDir -Recurse -Force
         }
     }
     
-    Write-Host "  [OK] superpowers installed" -ForegroundColor Green
+    if ($success) {
+        Write-Host "  [OK] superpowers installed" -ForegroundColor Green
+    }
+    else {
+        Write-Host "  [WARN] Some superpowers files failed to download" -ForegroundColor Yellow
+    }
 }
 
 function Install-PlanningWithFiles {
@@ -138,22 +153,24 @@ function Install-PlanningWithFiles {
     
     $files = @(
         @{ Path = "SKILL.md"; Dest = "SKILL.md" },
-        @{ Path = "reference.md"; Dest = "reference.md" },
         @{ Path = "examples.md"; Dest = "examples.md" },
-        @{ Path = "templates/findings.md"; Dest = "templates\findings.md" },
-        @{ Path = "templates/progress.md"; Dest = "templates\progress.md" },
-        @{ Path = "templates/task_plan.md"; Dest = "templates\task_plan.md" },
-        @{ Path = "scripts/check-complete.ps1"; Dest = "scripts\check-complete.ps1" },
-        @{ Path = "scripts/check-complete.sh"; Dest = "scripts\check-complete.sh" },
-        @{ Path = "scripts/init-session.ps1"; Dest = "scripts\init-session.ps1" },
-        @{ Path = "scripts/init-session.sh"; Dest = "scripts\init-session.sh" },
-        @{ Path = "scripts/session-catchup.py"; Dest = "scripts\session-catchup.py" }
+        @{ Path = "reference.md"; Dest = "reference.md" }
     )
     
     $success = $true
     foreach ($file in $files) {
-        $result = Download-RawFile -Repo "OthmanAdi/planning-with-files" -Branch "main" -Path ".opencode/skills/planning-with-files/$($file.Path)" -OutputPath "$destPath\$($file.Dest)"
+        $result = Download-RawFile -Repo "OthmanAdi/planning-with-files" -Branch "master" -Path ".opencode/skills/planning-with-files/$($file.Path)" -OutputPath "$destPath\$($file.Dest)"
         $success = $success -and $result
+    }
+    
+    $templates = @("findings.md", "progress.md", "task_plan.md")
+    foreach ($template in $templates) {
+        $result = Download-RawFile -Repo "OthmanAdi/planning-with-files" -Branch "master" -Path "templates/$template" -OutputPath "$destPath\templates\$template"
+    }
+    
+    $scripts = @("check-complete.ps1", "check-complete.sh", "init-session.ps1", "init-session.sh", "session-catchup.py")
+    foreach ($script in $scripts) {
+        $result = Download-RawFile -Repo "OthmanAdi/planning-with-files" -Branch "master" -Path "scripts/$script" -OutputPath "$destPath\scripts\$script"
     }
     
     if ($success) {
