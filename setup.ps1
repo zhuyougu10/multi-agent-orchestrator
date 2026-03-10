@@ -19,19 +19,16 @@ Write-Host "OpenCode Home: $OpenCodeHome"
 Write-Host "GitHub Repo: $GitHubRepo"
 Write-Host ""
 
-function Download-GitHubFile {
+function Download-File {
     param(
-        [string]$Repo,
-        [string]$Branch,
-        [string]$Path,
+        [string]$Url,
         [string]$OutputPath
     )
     
-    $url = "https://raw.githubusercontent.com/$Repo/$Branch/$Path"
-    Write-Host "  Downloading: $Path" -ForegroundColor Gray
+    Write-Host "  Downloading: $Url" -ForegroundColor Gray
     
     try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -ErrorAction Stop
         $dir = Split-Path $OutputPath -Parent
         if ($dir -and !(Test-Path $dir)) {
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -40,93 +37,22 @@ function Download-GitHubFile {
         return $true
     }
     catch {
-        Write-Host "  [WARN] Failed to download: $Path" -ForegroundColor Yellow
-        return $false
-    }
-}
-
-function Download-GitHubDirectory {
-    param(
-        [string]$Repo,
-        [string]$Branch,
-        [string]$Path,
-        [string]$OutputDir,
-        [string[]]$FileExtensions = @("*")
-    )
-    
-    $apiUrl = "https://api.github.com/repos/$Repo/contents/$Path?ref=$Branch"
-    
-    try {
-        $headers = @{
-            "Accept" = "application/vnd.github.v3+json"
-            "User-Agent" = "Multi-Agent-Setup-Script"
-        }
-        
-        if ($env:GITHUB_TOKEN) {
-            $headers["Authorization"] = "token $env:GITHUB_TOKEN"
-        }
-        
-        $response = Invoke-RestMethod -Uri $apiUrl -Headers $headers -ErrorAction Stop
-        
-        foreach ($item in $response) {
-            $itemPath = $item.path
-            $outputPath = Join-Path $OutputDir $item.name
-            
-            if ($item.type -eq "file") {
-                $shouldDownload = $false
-                foreach ($ext in $FileExtensions) {
-                    if ($ext -eq "*" -or $item.name -like $ext) {
-                        $shouldDownload = $true
-                        break
-                    }
-                }
-                
-                if ($shouldDownload) {
-                    Download-GitHubFile -Repo $Repo -Branch $Branch -Path $itemPath -OutputPath $outputPath | Out-Null
-                }
-            }
-            elseif ($item.type -eq "dir") {
-                $subDir = Join-Path $OutputDir $item.name
-                Download-GitHubDirectory -Repo $Repo -Branch $Branch -Path $itemPath -OutputDir $subDir -FileExtensions $FileExtensions | Out-Null
-            }
-        }
-        return $true
-    }
-    catch {
-        Write-Host "  [WARN] Failed to list directory: $Path" -ForegroundColor Yellow
+        Write-Host "  [WARN] Failed to download: $Url" -ForegroundColor Yellow
         Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Gray
         return $false
     }
 }
 
-function Install-FromGitHub {
+function Download-RawFile {
     param(
         [string]$Repo,
         [string]$Branch,
-        [hashtable]$Paths
+        [string]$Path,
+        [string]$OutputPath
     )
     
-    Write-Host "Installing from $Repo..." -ForegroundColor Yellow
-    
-    foreach ($entry in $Paths.GetEnumerator()) {
-        $sourcePath = $entry.Key
-        $destPath = $entry.Value
-        
-        Write-Host "  $sourcePath -> $destPath" -ForegroundColor Gray
-        
-        $fullDestPath = if ([System.IO.Path]::IsPathRooted($destPath)) { $destPath } else { Join-Path $ProjectRoot $destPath }
-        
-        $destDir = Split-Path $fullDestPath -Parent
-        if ($destDir -and !(Test-Path $destDir)) {
-            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-        }
-        
-        $success = Download-GitHubDirectory -Repo $Repo -Branch $Branch -Path $sourcePath -OutputDir $fullDestPath
-        
-        if (!$success) {
-            Write-Host "  [FAIL] Could not download $sourcePath" -ForegroundColor Red
-        }
-    }
+    $url = "https://raw.githubusercontent.com/$Repo/$Branch/$Path"
+    return Download-File -Url $url -OutputPath $OutputPath
 }
 
 function Install-Superpowers {
@@ -140,10 +66,27 @@ function Install-Superpowers {
         Remove-Item $tempSuperpowers -Recurse -Force
     }
     New-Item -ItemType Directory -Force -Path $tempSuperpowers | Out-Null
+    New-Item -ItemType Directory -Force -Path "$tempSuperpowers\skills" | Out-Null
     
-    Download-GitHubFile -Repo "obra/superpowers" -Branch "main" -Path ".opencode/plugins/superpowers.js" -OutputPath "$tempSuperpowers\superpowers.js" | Out-Null
+    $success = $true
     
-    Download-GitHubDirectory -Repo "obra/superpowers" -Branch "main" -Path "skills" -OutputDir "$tempSuperpowers\skills" | Out-Null
+    $success = (Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path ".opencode/plugins/superpowers.js" -OutputPath "$tempSuperpowers\superpowers.js") -and $success
+    
+    $skillsFiles = @(
+        "skills/superpowers.md",
+        "skills/ask-user-question.md",
+        "skills/exit-plan-mode.md",
+        "skills/notify-user.md"
+    )
+    
+    foreach ($file in $skillsFiles) {
+        $fileName = Split-Path $file -Leaf
+        $result = Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path $file -OutputPath "$tempSuperpowers\skills\$fileName"
+        if (-not $result) {
+            Write-Host "  [INFO] Trying alternative path..." -ForegroundColor Gray
+            $result = Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path "$file" -OutputPath "$tempSuperpowers\skills\$fileName"
+        }
+    }
     
     Remove-Item "$OpenCodeHome\plugins\superpowers.js" -Force -ErrorAction SilentlyContinue
     Remove-Item "$OpenCodeHome\skills\superpowers" -Force -Recurse -ErrorAction SilentlyContinue
@@ -159,12 +102,13 @@ function Install-Superpowers {
     }
     
     if (Test-Path "$tempSuperpowers\skills") {
+        $skillsDir = Join-Path $OpenCodeHome "skills\superpowers"
         New-Item -ItemType Junction `
-            -Path "$OpenCodeHome\skills\superpowers" `
+            -Path $skillsDir `
             -Target "$tempSuperpowers\skills" -ErrorAction SilentlyContinue | Out-Null
         
-        if (!(Test-Path "$OpenCodeHome\skills\superpowers")) {
-            Copy-Item "$tempSuperpowers\skills" "$OpenCodeHome\skills\superpowers" -Recurse -Force
+        if (!(Test-Path $skillsDir)) {
+            Copy-Item "$tempSuperpowers\skills" $skillsDir -Recurse -Force
         }
     }
     
@@ -189,14 +133,34 @@ function Install-PlanningWithFiles {
     }
     
     New-Item -ItemType Directory -Force -Path $destPath | Out-Null
+    New-Item -ItemType Directory -Force -Path "$destPath\templates" | Out-Null
+    New-Item -ItemType Directory -Force -Path "$destPath\scripts" | Out-Null
     
-    $success = Download-GitHubDirectory -Repo "OthmanAdi/planning-with-files" -Branch "main" -Path ".opencode/skills/planning-with-files" -OutputDir $destPath
+    $files = @(
+        @{ Path = "SKILL.md"; Dest = "SKILL.md" },
+        @{ Path = "reference.md"; Dest = "reference.md" },
+        @{ Path = "examples.md"; Dest = "examples.md" },
+        @{ Path = "templates/findings.md"; Dest = "templates\findings.md" },
+        @{ Path = "templates/progress.md"; Dest = "templates\progress.md" },
+        @{ Path = "templates/task_plan.md"; Dest = "templates\task_plan.md" },
+        @{ Path = "scripts/check-complete.ps1"; Dest = "scripts\check-complete.ps1" },
+        @{ Path = "scripts/check-complete.sh"; Dest = "scripts\check-complete.sh" },
+        @{ Path = "scripts/init-session.ps1"; Dest = "scripts\init-session.ps1" },
+        @{ Path = "scripts/init-session.sh"; Dest = "scripts\init-session.sh" },
+        @{ Path = "scripts/session-catchup.py"; Dest = "scripts\session-catchup.py" }
+    )
+    
+    $success = $true
+    foreach ($file in $files) {
+        $result = Download-RawFile -Repo "OthmanAdi/planning-with-files" -Branch "main" -Path ".opencode/skills/planning-with-files/$($file.Path)" -OutputPath "$destPath\$($file.Dest)"
+        $success = $success -and $result
+    }
     
     if ($success) {
         Write-Host "  [OK] planning-with-files installed" -ForegroundColor Green
     }
     else {
-        Write-Host "  [FAIL] Could not install planning-with-files" -ForegroundColor Red
+        Write-Host "  [FAIL] Some files failed to download" -ForegroundColor Red
     }
 }
 
@@ -208,35 +172,41 @@ function Install-ProjectComponents {
     
     Write-Host "Installing project components..." -ForegroundColor Yellow
     
-    $components = @{
-        ".opencode/commands"    = ".opencode\commands"
-        ".opencode/agents"      = ".opencode\agents"
-        ".opencode/opencode.json" = ".opencode\opencode.json"
-        ".mcp/task-router"      = ".mcp\task-router"
-        "AGENTS.md"             = "AGENTS.md"
-        "templates"             = "templates"
+    $components = @(
+        @{ Path = ".opencode/commands/orchestrate.md"; Dest = ".opencode\commands\orchestrate.md" },
+        @{ Path = ".opencode/commands/delegate.md"; Dest = ".opencode\commands\delegate.md" },
+        @{ Path = ".opencode/commands/review.md"; Dest = ".opencode\commands\review.md" },
+        @{ Path = ".opencode/commands/repair.md"; Dest = ".opencode\commands\repair.md" },
+        @{ Path = ".opencode/commands/merge.md"; Dest = ".opencode\commands\merge.md" },
+        @{ Path = ".opencode/commands/finalize.md"; Dest = ".opencode\commands\finalize.md" },
+        @{ Path = ".opencode/agents/planner.md"; Dest = ".opencode\agents\planner.md" },
+        @{ Path = ".opencode/agents/reviewer.md"; Dest = ".opencode\agents\reviewer.md" },
+        @{ Path = ".opencode/agents/executor.md"; Dest = ".opencode\agents\executor.md" },
+        @{ Path = ".opencode/opencode.json"; Dest = ".opencode\opencode.json" },
+        @{ Path = ".mcp/task-router/package.json"; Dest = ".mcp\task-router\package.json" },
+        @{ Path = ".mcp/task-router/server.js"; Dest = ".mcp\task-router\server.js" },
+        @{ Path = "AGENTS.md"; Dest = "AGENTS.md" },
+        @{ Path = "templates/implementation-template.md"; Dest = "templates\implementation-template.md" },
+        @{ Path = "templates/docs-template.md"; Dest = "templates\docs-template.md" },
+        @{ Path = "templates/repair-template.md"; Dest = "templates\repair-template.md" }
+    )
+    
+    $allSuccess = $true
+    foreach ($comp in $components) {
+        Write-Host "  Downloading: $($comp.Path)" -ForegroundColor Gray
+        $destPath = Join-Path $ProjectRoot $comp.Dest
+        $result = Download-RawFile -Repo $Repo -Branch $Branch -Path $comp.Path -OutputPath $destPath
+        if (-not $result) {
+            $allSuccess = $false
+        }
     }
     
-    foreach ($entry in $components.GetEnumerator()) {
-        $sourcePath = $entry.Key
-        $destPath = Join-Path $ProjectRoot $entry.Value
-        
-        Write-Host "  Checking: $sourcePath" -ForegroundColor Gray
-        
-        $destDir = Split-Path $destPath -Parent
-        if ($destDir -and !(Test-Path $destDir)) {
-            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-        }
-        
-        if ($sourcePath -like "*.*") {
-            Download-GitHubFile -Repo $Repo -Branch $Branch -Path $sourcePath -OutputPath $destPath | Out-Null
-        }
-        else {
-            Download-GitHubDirectory -Repo $Repo -Branch $Branch -Path $sourcePath -OutputDir $destPath | Out-Null
-        }
+    if ($allSuccess) {
+        Write-Host "  [OK] Project components installed" -ForegroundColor Green
     }
-    
-    Write-Host "  [OK] Project components installed" -ForegroundColor Green
+    else {
+        Write-Host "  [WARN] Some components failed to download" -ForegroundColor Yellow
+    }
 }
 
 function Install-MCPDependencies {
