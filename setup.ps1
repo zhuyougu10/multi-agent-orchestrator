@@ -94,8 +94,6 @@ function Install-Superpowers {
         New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
         
         $result = Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path "skills/$skill/SKILL.md" -OutputPath "$skillDir\SKILL.md"
-        
-        Download-RawFile -Repo "obra/superpowers" -Branch "main" -Path "skills/$skill/references" -OutputPath "$skillDir\references" | Out-Null
     }
     
     Remove-Item "$OpenCodeHome\plugins\superpowers.js" -Force -ErrorAction SilentlyContinue
