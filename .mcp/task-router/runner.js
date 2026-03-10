@@ -9,7 +9,7 @@ export function buildArgs(agent, prompt) {
   if (agent === "gemini") {
     return {
       command: "powershell",
-      args: ["-NoProfile", "-Command", "gemini -y"],
+      args: ["-NoProfile", "-Command", "gemini -p _ --output-format text -y"],
       stdin: prompt
     };
   }
