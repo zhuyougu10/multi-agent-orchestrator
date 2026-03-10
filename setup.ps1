@@ -1,202 +1,265 @@
+$ErrorActionPreference = "Stop"
+
 param(
-    [string]$RepoUrl = "https://github.com/YOUR_USERNAME/multi-agent-orchestrator",
+    [string]$GitHubRepo = "",
     [string]$Branch = "main",
     [switch]$SkipGlobalSkills,
-    [switch]$SkipMcp,
-    [switch]$SkipTemplates,
-    [switch]$SkipAgents,
-    [switch]$SkipCommands,
+    [switch]$SkipMCP,
     [switch]$Force
 )
 
-$ErrorActionPreference = "Stop"
-
 $ScriptDir = $PSScriptRoot
-$ProjectRoot = $ScriptDir
+$ProjectRoot = (Get-Location).Path
 $OpenCodeHome = "$env:USERPROFILE\.config\opencode"
 $TempRoot = "$env:TEMP\multi-agent-bootstrap"
 
 Write-Host "=== Multi-Agent Orchestrator Setup ===" -ForegroundColor Cyan
 Write-Host "Project Root: $ProjectRoot"
-Write-Host "Repository: $RepoUrl"
-Write-Host "Branch: $Branch"
+Write-Host "OpenCode Home: $OpenCodeHome"
+Write-Host "GitHub Repo: $GitHubRepo"
 Write-Host ""
+
+function Download-GitHubFile {
+    param(
+        [string]$Repo,
+        [string]$Branch,
+        [string]$Path,
+        [string]$OutputPath
+    )
+    
+    $url = "https://raw.githubusercontent.com/$Repo/$Branch/$Path"
+    Write-Host "  Downloading: $Path" -ForegroundColor Gray
+    
+    try {
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop
+        $dir = Split-Path $OutputPath -Parent
+        if ($dir -and !(Test-Path $dir)) {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        }
+        [System.IO.File]::WriteAllText($OutputPath, $response.Content, [System.Text.Encoding]::UTF8)
+        return $true
+    }
+    catch {
+        Write-Host "  [WARN] Failed to download: $Path" -ForegroundColor Yellow
+        return $false
+    }
+}
 
 function Download-GitHubDirectory {
     param(
-        [string]$RepoUrl,
+        [string]$Repo,
         [string]$Branch,
-        [string]$Directory,
-        [string]$DestPath
+        [string]$Path,
+        [string]$OutputDir,
+        [string[]]$FileExtensions = @("*")
     )
     
-    $repoName = $RepoUrl -replace '.*github\.com[/:]', '' -replace '\.git$', ''
-    $archiveUrl = "https://api.github.com/repos/$repoName/contents/$Directory`?ref=$Branch"
-    
-    Write-Host "  Downloading $Directory from GitHub..." -ForegroundColor Gray
+    $apiUrl = "https://api.github.com/repos/$Repo/contents/$Path?ref=$Branch"
     
     try {
         $headers = @{
             "Accept" = "application/vnd.github.v3+json"
-            "User-Agent" = "Multi-Agent-Orchestrator-Setup"
+            "User-Agent" = "Multi-Agent-Setup-Script"
         }
         
-        $response = Invoke-RestMethod -Uri $archiveUrl -Headers $headers -ErrorAction Stop
+        if ($env:GITHUB_TOKEN) {
+            $headers["Authorization"] = "token $env:GITHUB_TOKEN"
+        }
+        
+        $response = Invoke-RestMethod -Uri $apiUrl -Headers $headers -ErrorAction Stop
         
         foreach ($item in $response) {
-            $itemDest = Join-Path $DestPath $item.name
+            $itemPath = $item.path
+            $outputPath = Join-Path $OutputDir $item.name
             
-            if ($item.type -eq "dir") {
-                New-Item -ItemType Directory -Force -Path $itemDest | Out-Null
-                Download-GitHubDirectory -RepoUrl $RepoUrl -Branch $Branch -Directory "$Directory/$($item.name)" -DestPath $itemDest
+            if ($item.type -eq "file") {
+                $shouldDownload = $false
+                foreach ($ext in $FileExtensions) {
+                    if ($ext -eq "*" -or $item.name -like $ext) {
+                        $shouldDownload = $true
+                        break
+                    }
+                }
+                
+                if ($shouldDownload) {
+                    Download-GitHubFile -Repo $Repo -Branch $Branch -Path $itemPath -OutputPath $outputPath | Out-Null
+                }
             }
-            elseif ($item.type -eq "file") {
-                Write-Host "    Downloading: $($item.name)" -ForegroundColor DarkGray
-                $fileContent = Invoke-RestMethod -Uri $item.download_url -Headers $headers
-                $fileContent | Out-File -FilePath $itemDest -Encoding UTF8 -Force
+            elseif ($item.type -eq "dir") {
+                $subDir = Join-Path $OutputDir $item.name
+                Download-GitHubDirectory -Repo $Repo -Branch $Branch -Path $itemPath -OutputDir $subDir -FileExtensions $FileExtensions | Out-Null
             }
         }
         return $true
     }
     catch {
-        Write-Host "  [WARN] Failed to download $Directory : $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  [WARN] Failed to list directory: $Path" -ForegroundColor Yellow
+        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Gray
         return $false
     }
 }
 
-function Download-GitHubFile {
+function Install-FromGitHub {
     param(
-        [string]$RepoUrl,
+        [string]$Repo,
         [string]$Branch,
-        [string]$FilePath,
-        [string]$DestPath
+        [hashtable]$Paths
     )
     
-    $repoName = $RepoUrl -replace '.*github\.com[/:]', '' -replace '\.git$', ''
-    $rawUrl = "https://raw.githubusercontent.com/$repoName/$Branch/$FilePath"
+    Write-Host "Installing from $Repo..." -ForegroundColor Yellow
     
-    Write-Host "  Downloading $FilePath..." -ForegroundColor Gray
-    
-    try {
-        $headers = @{
-            "User-Agent" = "Multi-Agent-Orchestrator-Setup"
-        }
+    foreach ($entry in $Paths.GetEnumerator()) {
+        $sourcePath = $entry.Key
+        $destPath = $entry.Value
         
-        $content = Invoke-RestMethod -Uri $rawUrl -Headers $headers
-        $destDir = Split-Path $DestPath -Parent
-        if ($destDir) {
+        Write-Host "  $sourcePath -> $destPath" -ForegroundColor Gray
+        
+        $fullDestPath = if ([System.IO.Path]::IsPathRooted($destPath)) { $destPath } else { Join-Path $ProjectRoot $destPath }
+        
+        $destDir = Split-Path $fullDestPath -Parent
+        if ($destDir -and !(Test-Path $destDir)) {
             New-Item -ItemType Directory -Force -Path $destDir | Out-Null
         }
-        $content | Out-File -FilePath $DestPath -Encoding UTF8 -Force
-        return $true
-    }
-    catch {
-        Write-Host "  [WARN] Failed to download $FilePath : $($_.Exception.Message)" -ForegroundColor Yellow
-        return $false
+        
+        $success = Download-GitHubDirectory -Repo $Repo -Branch $Branch -Path $sourcePath -OutputDir $fullDestPath
+        
+        if (!$success) {
+            Write-Host "  [FAIL] Could not download $sourcePath" -ForegroundColor Red
+        }
     }
 }
 
-function Install-GlobalSkills {
-    Write-Host "Installing global skills (superpowers, planning-with-files)..." -ForegroundColor Yellow
+function Install-Superpowers {
+    Write-Host "Installing superpowers to OpenCode..." -ForegroundColor Yellow
     
     New-Item -ItemType Directory -Force -Path "$OpenCodeHome\plugins" | Out-Null
     New-Item -ItemType Directory -Force -Path "$OpenCodeHome\skills" | Out-Null
     
-    $superpowersDir = "$TempRoot\superpowers"
-    if (!(Test-Path $superpowersDir) -or $Force) {
-        if (Test-Path $superpowersDir) { Remove-Item $superpowersDir -Recurse -Force }
-        git clone --depth 1 https://github.com/obra/superpowers.git $superpowersDir 2>$null
+    $tempSuperpowers = Join-Path $TempRoot "superpowers-temp"
+    if (Test-Path $tempSuperpowers) {
+        Remove-Item $tempSuperpowers -Recurse -Force
     }
+    New-Item -ItemType Directory -Force -Path $tempSuperpowers | Out-Null
     
-    $planningDir = "$TempRoot\planning-with-files"
-    if (!(Test-Path $planningDir) -or $Force) {
-        if (Test-Path $planningDir) { Remove-Item $planningDir -Recurse -Force }
-        git clone --depth 1 https://github.com/OthmanAdi/planning-with-files.git $planningDir 2>$null
-    }
+    Download-GitHubFile -Repo "obra/superpowers" -Branch "main" -Path ".opencode/plugins/superpowers.js" -OutputPath "$tempSuperpowers\superpowers.js" | Out-Null
+    
+    Download-GitHubDirectory -Repo "obra/superpowers" -Branch "main" -Path "skills" -OutputDir "$tempSuperpowers\skills" | Out-Null
     
     Remove-Item "$OpenCodeHome\plugins\superpowers.js" -Force -ErrorAction SilentlyContinue
-    Remove-Item "$OpenCodeHome\skills\superpowers" -Force -ErrorAction SilentlyContinue -Recurse
+    Remove-Item "$OpenCodeHome\skills\superpowers" -Force -Recurse -ErrorAction SilentlyContinue
     
-    if (Test-Path "$superpowersDir\.opencode\plugins\superpowers.js") {
+    if (Test-Path "$tempSuperpowers\superpowers.js") {
         New-Item -ItemType SymbolicLink `
             -Path "$OpenCodeHome\plugins\superpowers.js" `
-            -Target "$superpowersDir\.opencode\plugins\superpowers.js" -Force | Out-Null
+            -Target "$tempSuperpowers\superpowers.js" -ErrorAction SilentlyContinue | Out-Null
         
+        if (!(Test-Path "$OpenCodeHome\plugins\superpowers.js")) {
+            Copy-Item "$tempSuperpowers\superpowers.js" "$OpenCodeHome\plugins\superpowers.js" -Force
+        }
+    }
+    
+    if (Test-Path "$tempSuperpowers\skills") {
         New-Item -ItemType Junction `
             -Path "$OpenCodeHome\skills\superpowers" `
-            -Target "$superpowersDir\skills" -Force | Out-Null
+            -Target "$tempSuperpowers\skills" -ErrorAction SilentlyContinue | Out-Null
+        
+        if (!(Test-Path "$OpenCodeHome\skills\superpowers")) {
+            Copy-Item "$tempSuperpowers\skills" "$OpenCodeHome\skills\superpowers" -Recurse -Force
+        }
     }
     
-    New-Item -ItemType Directory -Force -Path "$ProjectRoot\.opencode\skills" | Out-Null
-    New-Item -ItemType Directory -Force -Path "$ProjectRoot\.codex\skills" | Out-Null
-    New-Item -ItemType Directory -Force -Path "$ProjectRoot\.gemini\skills" | Out-Null
-    
-    if (Test-Path "$planningDir\.opencode\skills\planning-with-files") {
-        Copy-Item -Recurse -Force `
-            "$planningDir\.opencode\skills\planning-with-files" `
-            "$ProjectRoot\.opencode\skills\" 2>$null
-    }
-    if (Test-Path "$planningDir\.codex\skills\planning-with-files") {
-        Copy-Item -Recurse -Force `
-            "$planningDir\.codex\skills\planning-with-files" `
-            "$ProjectRoot\.codex\skills\" 2>$null
-    }
-    if (Test-Path "$planningDir\.gemini\skills\planning-with-files") {
-        Copy-Item -Recurse -Force `
-            "$planningDir\.gemini\skills\planning-with-files" `
-            "$ProjectRoot\.gemini\skills\" 2>$null
-    }
+    Write-Host "  [OK] superpowers installed" -ForegroundColor Green
 }
 
-function Install-McpFromGitHub {
-    Write-Host "Installing MCP task-router from GitHub..." -ForegroundColor Yellow
+function Install-PlanningWithFiles {
+    param([string]$TargetDir)
     
-    $mcpDest = "$ProjectRoot\.mcp\task-router"
-    New-Item -ItemType Directory -Force -Path $mcpDest | Out-Null
+    Write-Host "Installing planning-with-files to $TargetDir..." -ForegroundColor Yellow
     
-    $success = Download-GitHubDirectory -RepoUrl $RepoUrl -Branch $Branch -Directory ".mcp/task-router" -DestPath $mcpDest
+    $destPath = Join-Path $TargetDir "planning-with-files"
+    
+    if (Test-Path $destPath) {
+        if ($Force) {
+            Remove-Item $destPath -Recurse -Force
+        }
+        else {
+            Write-Host "  [SKIP] Already exists (use -Force to overwrite)" -ForegroundColor Gray
+            return
+        }
+    }
+    
+    New-Item -ItemType Directory -Force -Path $destPath | Out-Null
+    
+    $success = Download-GitHubDirectory -Repo "OthmanAdi/planning-with-files" -Branch "main" -Path ".opencode/skills/planning-with-files" -OutputDir $destPath
     
     if ($success) {
-        Write-Host "  Installing npm dependencies..." -ForegroundColor Gray
-        Push-Location $mcpDest
-        npm install --silent 2>$null
-        Pop-Location
+        Write-Host "  [OK] planning-with-files installed" -ForegroundColor Green
+    }
+    else {
+        Write-Host "  [FAIL] Could not install planning-with-files" -ForegroundColor Red
     }
 }
 
-function Install-TemplatesFromGitHub {
-    Write-Host "Installing templates from GitHub..." -ForegroundColor Yellow
+function Install-ProjectComponents {
+    param(
+        [string]$Repo,
+        [string]$Branch
+    )
     
-    $templatesDest = "$ProjectRoot\templates"
-    New-Item -ItemType Directory -Force -Path $templatesDest | Out-Null
+    Write-Host "Installing project components..." -ForegroundColor Yellow
     
-    Download-GitHubDirectory -RepoUrl $RepoUrl -Branch $Branch -Directory "templates" -DestPath $templatesDest | Out-Null
+    $components = @{
+        ".opencode/commands"    = ".opencode\commands"
+        ".opencode/agents"      = ".opencode\agents"
+        ".opencode/opencode.json" = ".opencode\opencode.json"
+        ".mcp/task-router"      = ".mcp\task-router"
+        "AGENTS.md"             = "AGENTS.md"
+        "templates"             = "templates"
+    }
+    
+    foreach ($entry in $components.GetEnumerator()) {
+        $sourcePath = $entry.Key
+        $destPath = Join-Path $ProjectRoot $entry.Value
+        
+        Write-Host "  Checking: $sourcePath" -ForegroundColor Gray
+        
+        $destDir = Split-Path $destPath -Parent
+        if ($destDir -and !(Test-Path $destDir)) {
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+        }
+        
+        if ($sourcePath -like "*.*") {
+            Download-GitHubFile -Repo $Repo -Branch $Branch -Path $sourcePath -OutputPath $destPath | Out-Null
+        }
+        else {
+            Download-GitHubDirectory -Repo $Repo -Branch $Branch -Path $sourcePath -OutputDir $destPath | Out-Null
+        }
+    }
+    
+    Write-Host "  [OK] Project components installed" -ForegroundColor Green
 }
 
-function Install-AgentsFromGitHub {
-    Write-Host "Installing agents from GitHub..." -ForegroundColor Yellow
+function Install-MCPDependencies {
+    Write-Host "Installing MCP dependencies..." -ForegroundColor Yellow
     
-    $agentsDest = "$ProjectRoot\.opencode\agents"
-    New-Item -ItemType Directory -Force -Path $agentsDest | Out-Null
+    $mcpPath = Join-Path $ProjectRoot ".mcp\task-router"
     
-    Download-GitHubDirectory -RepoUrl $RepoUrl -Branch $Branch -Directory ".opencode/agents" -DestPath $agentsDest | Out-Null
-}
-
-function Install-CommandsFromGitHub {
-    Write-Host "Installing commands from GitHub..." -ForegroundColor Yellow
+    if (!(Test-Path $mcpPath)) {
+        Write-Host "  [SKIP] MCP directory not found" -ForegroundColor Gray
+        return
+    }
     
-    $commandsDest = "$ProjectRoot\.opencode\commands"
-    New-Item -ItemType Directory -Force -Path $commandsDest | Out-Null
-    
-    Download-GitHubDirectory -RepoUrl $RepoUrl -Branch $Branch -Directory ".opencode/commands" -DestPath $commandsDest | Out-Null
-}
-
-function Install-ConfigFromGitHub {
-    Write-Host "Installing configuration files from GitHub..." -ForegroundColor Yellow
-    
-    Download-GitHubFile -RepoUrl $RepoUrl -Branch $Branch -FilePath ".opencode/opencode.json" -DestPath "$ProjectRoot\.opencode\opencode.json" | Out-Null
-    Download-GitHubFile -RepoUrl $RepoUrl -Branch $Branch -FilePath "AGENTS.md" -DestPath "$ProjectRoot\AGENTS.md" | Out-Null
-    Download-GitHubFile -RepoUrl $RepoUrl -Branch $Branch -FilePath ".gitignore" -DestPath "$ProjectRoot\.gitignore" | Out-Null
+    Push-Location $mcpPath
+    try {
+        npm install --silent 2>$null
+        Write-Host "  [OK] MCP dependencies installed" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "  [FAIL] npm install failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 function Test-Installation {
@@ -206,66 +269,77 @@ function Test-Installation {
     $allOk = $true
     
     if (!$SkipGlobalSkills) {
-        Write-Host "Checking superpowers plugin link..." -ForegroundColor Yellow
-        $pluginLink = Get-Item "$OpenCodeHome\plugins\superpowers.js" -ErrorAction SilentlyContinue
-        if ($pluginLink -and $pluginLink.LinkType) {
-            Write-Host "  [OK] Plugin symlink created" -ForegroundColor Green
-        } else {
-            Write-Host "  [WARN] Plugin symlink not found (may need admin rights)" -ForegroundColor Yellow
+        Write-Host "Checking superpowers plugin..." -ForegroundColor Yellow
+        if (Test-Path "$OpenCodeHome\plugins\superpowers.js") {
+            Write-Host "  [OK] Plugin installed" -ForegroundColor Green
+        }
+        else {
+            Write-Host "  [FAIL] Plugin not found" -ForegroundColor Red
+            $allOk = $false
         }
         
-        Write-Host "Checking superpowers skills junction..." -ForegroundColor Yellow
-        $skillsLink = Get-Item "$OpenCodeHome\skills\superpowers" -ErrorAction SilentlyContinue
-        if ($skillsLink -and $skillsLink.LinkType) {
-            Write-Host "  [OK] Skills junction created" -ForegroundColor Green
-        } else {
-            Write-Host "  [WARN] Skills junction not found (may need admin rights)" -ForegroundColor Yellow
+        Write-Host "Checking superpowers skills..." -ForegroundColor Yellow
+        if (Test-Path "$OpenCodeHome\skills\superpowers") {
+            Write-Host "  [OK] Skills installed" -ForegroundColor Green
         }
-        
-        Write-Host "Checking planning-with-files in OpenCode..." -ForegroundColor Yellow
-        if (Test-Path "$ProjectRoot\.opencode\skills\planning-with-files") {
-            Write-Host "  [OK] planning-with-files installed for OpenCode" -ForegroundColor Green
-        } else {
-            Write-Host "  [FAIL] planning-with-files not found for OpenCode" -ForegroundColor Red
+        else {
+            Write-Host "  [FAIL] Skills not found" -ForegroundColor Red
             $allOk = $false
         }
     }
     
-    if (!$SkipMcp) {
+    Write-Host "Checking planning-with-files in OpenCode..." -ForegroundColor Yellow
+    if (Test-Path "$ProjectRoot\.opencode\skills\planning-with-files") {
+        Write-Host "  [OK] planning-with-files installed for OpenCode" -ForegroundColor Green
+    }
+    else {
+        Write-Host "  [FAIL] planning-with-files not found for OpenCode" -ForegroundColor Red
+        $allOk = $false
+    }
+    
+    Write-Host "Checking planning-with-files in Codex..." -ForegroundColor Yellow
+    if (Test-Path "$ProjectRoot\.codex\skills\planning-with-files") {
+        Write-Host "  [OK] planning-with-files installed for Codex" -ForegroundColor Green
+    }
+    else {
+        Write-Host "  [WARN] planning-with-files not found for Codex (optional)" -ForegroundColor Yellow
+    }
+    
+    Write-Host "Checking planning-with-files in Gemini..." -ForegroundColor Yellow
+    if (Test-Path "$ProjectRoot\.gemini\skills\planning-with-files") {
+        Write-Host "  [OK] planning-with-files installed for Gemini" -ForegroundColor Green
+    }
+    else {
+        Write-Host "  [WARN] planning-with-files not found for Gemini (optional)" -ForegroundColor Yellow
+    }
+    
+    if (!$SkipMCP) {
         Write-Host "Checking MCP dependencies..." -ForegroundColor Yellow
         if (Test-Path "$ProjectRoot\.mcp\task-router\node_modules") {
             Write-Host "  [OK] MCP dependencies installed" -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "  [FAIL] MCP dependencies not installed" -ForegroundColor Red
             $allOk = $false
         }
     }
     
-    if (!$SkipTemplates) {
-        Write-Host "Checking templates..." -ForegroundColor Yellow
-        if (Test-Path "$ProjectRoot\templates") {
-            Write-Host "  [OK] Templates installed" -ForegroundColor Green
-        } else {
-            Write-Host "  [WARN] Templates not found" -ForegroundColor Yellow
-        }
+    Write-Host "Checking AGENTS.md..." -ForegroundColor Yellow
+    if (Test-Path "$ProjectRoot\AGENTS.md") {
+        Write-Host "  [OK] AGENTS.md exists" -ForegroundColor Green
+    }
+    else {
+        Write-Host "  [FAIL] AGENTS.md not found" -ForegroundColor Red
+        $allOk = $false
     }
     
-    if (!$SkipAgents) {
-        Write-Host "Checking agents..." -ForegroundColor Yellow
-        if (Test-Path "$ProjectRoot\.opencode\agents") {
-            Write-Host "  [OK] Agents installed" -ForegroundColor Green
-        } else {
-            Write-Host "  [WARN] Agents not found" -ForegroundColor Yellow
-        }
+    Write-Host "Checking .opencode/opencode.json..." -ForegroundColor Yellow
+    if (Test-Path "$ProjectRoot\.opencode\opencode.json") {
+        Write-Host "  [OK] opencode.json exists" -ForegroundColor Green
     }
-    
-    if (!$SkipCommands) {
-        Write-Host "Checking commands..." -ForegroundColor Yellow
-        if (Test-Path "$ProjectRoot\.opencode\commands") {
-            Write-Host "  [OK] Commands installed" -ForegroundColor Green
-        } else {
-            Write-Host "  [WARN] Commands not found" -ForegroundColor Yellow
-        }
+    else {
+        Write-Host "  [FAIL] opencode.json not found" -ForegroundColor Red
+        $allOk = $false
     }
     
     return $allOk
@@ -274,48 +348,44 @@ function Test-Installation {
 New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
 
 if (!$SkipGlobalSkills) {
-    Install-GlobalSkills
+    Install-Superpowers
 }
 
-if (!$SkipMcp) {
-    Install-McpFromGitHub
+Write-Host "Installing planning-with-files skill..." -ForegroundColor Yellow
+New-Item -ItemType Directory -Force -Path "$ProjectRoot\.opencode\skills" | Out-Null
+New-Item -ItemType Directory -Force -Path "$ProjectRoot\.codex\skills" | Out-Null
+New-Item -ItemType Directory -Force -Path "$ProjectRoot\.gemini\skills" | Out-Null
+
+Install-PlanningWithFiles -TargetDir "$ProjectRoot\.opencode\skills"
+Install-PlanningWithFiles -TargetDir "$ProjectRoot\.codex\skills"
+Install-PlanningWithFiles -TargetDir "$ProjectRoot\.gemini\skills"
+
+if ($GitHubRepo) {
+    Install-ProjectComponents -Repo $GitHubRepo -Branch $Branch
 }
 
-if (!$SkipTemplates) {
-    Install-TemplatesFromGitHub
+if (!$SkipMCP) {
+    Install-MCPDependencies
 }
-
-if (!$SkipAgents) {
-    Install-AgentsFromGitHub
-}
-
-if (!$SkipCommands) {
-    Install-CommandsFromGitHub
-}
-
-Install-ConfigFromGitHub
 
 $success = Test-Installation
 
 Write-Host ""
 Write-Host "=== Setup Complete ===" -ForegroundColor Cyan
-Write-Host ""
 
 if ($success) {
     Write-Host "All components installed successfully!" -ForegroundColor Green
-} else {
-    Write-Host "Some components failed to install. Check the messages above." -ForegroundColor Yellow
+}
+else {
+    Write-Host "Some components failed to install. Check the output above." -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
-Write-Host "1. Initialize Git repository (if not already):" -ForegroundColor White
-Write-Host "   git init" -ForegroundColor Gray
-Write-Host "   git add ." -ForegroundColor Gray
-Write-Host "   git commit -m 'init multi-agent orchestrator'" -ForegroundColor Gray
-Write-Host ""
-Write-Host "2. Install CLI tools (if not already):" -ForegroundColor White
+Write-Host "1. Install Codex CLI (if not already):" -ForegroundColor White
 Write-Host "   npm install -g @openai/codex" -ForegroundColor Gray
+Write-Host ""
+Write-Host "2. Install Gemini CLI (if not already):" -ForegroundColor White
 Write-Host "   npm install -g @google/gemini-cli" -ForegroundColor Gray
 Write-Host ""
 Write-Host "3. Start OpenCode:" -ForegroundColor White
@@ -323,14 +393,3 @@ Write-Host "   opencode" -ForegroundColor Gray
 Write-Host ""
 Write-Host "4. Run your first task:" -ForegroundColor White
 Write-Host "   /orchestrate" -ForegroundColor Gray
-Write-Host ""
-Write-Host "=== Usage Options ===" -ForegroundColor Cyan
-Write-Host "Skip specific components:" -ForegroundColor White
-Write-Host "  .\setup.ps1 -SkipGlobalSkills    # Skip superpowers/planning-with-files" -ForegroundColor Gray
-Write-Host "  .\setup.ps1 -SkipMcp             # Skip MCP task-router" -ForegroundColor Gray
-Write-Host "  .\setup.ps1 -SkipTemplates       # Skip templates" -ForegroundColor Gray
-Write-Host "  .\setup.ps1 -SkipAgents          # Skip agents" -ForegroundColor Gray
-Write-Host "  .\setup.ps1 -SkipCommands        # Skip commands" -ForegroundColor Gray
-Write-Host ""
-Write-Host "Use custom repository:" -ForegroundColor White
-Write-Host "  .\setup.ps1 -RepoUrl 'https://github.com/user/repo' -Branch 'develop'" -ForegroundColor Gray
