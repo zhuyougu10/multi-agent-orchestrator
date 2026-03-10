@@ -51,6 +51,10 @@ findings.md
 progress.md
 task_plan.md
 
+# Agent-specific skills (installed by setup.ps1)
+.codex/
+.gemini/
+
 # Package locks (optional, uncomment if needed)
 # package-lock.json
 # yarn.lock
