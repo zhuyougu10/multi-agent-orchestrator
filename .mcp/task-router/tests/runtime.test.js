@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { resolveExecutionContext } from "../runtime.js";
+import { resolveExecutionContext, syncScopedFilesIntoExecutionPath } from "../runtime.js";
 import { buildArgs } from "../runner.js";
 
 test("uses direct execution for non-git directories", async () => {
@@ -42,4 +42,18 @@ test("codex direct execution skips git trust check", () => {
 
   assert.equal(built.command, "powershell");
   assert.equal(built.args.at(-1).includes("--skip-git-repo-check"), true);
+});
+
+test("syncScopedFilesIntoExecutionPath copies scoped root files into worktree", () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "task-router-sync-src-"));
+  const execRoot = fs.mkdtempSync(path.join(os.tmpdir(), "task-router-sync-dst-"));
+
+  fs.writeFileSync(path.join(repoRoot, "task_plan.md"), "plan\n", "utf8");
+  fs.mkdirSync(path.join(repoRoot, "notes"), { recursive: true });
+  fs.writeFileSync(path.join(repoRoot, "notes", "finding.txt"), "finding\n", "utf8");
+
+  syncScopedFilesIntoExecutionPath(repoRoot, execRoot, ["task_plan.md", "notes/"]);
+
+  assert.equal(fs.readFileSync(path.join(execRoot, "task_plan.md"), "utf8"), "plan\n");
+  assert.equal(fs.readFileSync(path.join(execRoot, "notes", "finding.txt"), "utf8"), "finding\n");
 });

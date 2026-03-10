@@ -4,7 +4,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { launchDispatch } from "./dispatch.js";
-import { resolveExecutionContext } from "./runtime.js";
+import { resolveExecutionContext, syncScopedFilesIntoExecutionPath } from "./runtime.js";
 import { buildArgs } from "./runner.js";
 import {
   ensureDirs,
@@ -18,6 +18,14 @@ import {
 } from "./lib/paths.js";
 import { exists, readJson, writeJsonAtomic } from "./lib/storage.js";
 import { execCmd } from "./lib/process.js";
+import {
+  detectEvidenceConflicts,
+  extractJsonObject,
+  isRunSuccessful,
+  isTaskSuccessful,
+  normalizeStructuredStdout,
+  shouldCommitWorktree
+} from "./lib/result-utils.js";
 import { sanitizeTaskId } from "./lib/validation.js";
 
 ensureDirs();
@@ -130,11 +138,7 @@ async function getHeadSha(cwd) {
 }
 
 function tryParseJson(text) {
-  try {
-    return { ok: true, value: JSON.parse(text) };
-  } catch {
-    return { ok: false, value: null };
-  }
+  return extractJsonObject(text);
 }
 
 function validateOutputShape(parsed, outputSchema) {
@@ -168,7 +172,7 @@ function computeScore({ result, outputSchema, filesScope }) {
   let score = 100;
   const notes = [];
 
-  if (result.exit_code !== 0) {
+  if (!isRunSuccessful({ code: result.exit_code, timed_out: result.timed_out, idle_terminated: result.idle_terminated }, parsed.ok)) {
     score -= 35;
     notes.push("command exit_code != 0");
   }
@@ -293,6 +297,10 @@ async function runInWorktree(job, agent) {
     return failed;
   }
 
+  if (executionContext.mode === "worktree") {
+    syncScopedFilesIntoExecutionPath(job.cwd, executionContext.path, job.files_scope || []);
+  }
+
   let built;
   try {
     built = buildArgs(agent, job.prompt);
@@ -344,11 +352,14 @@ async function runInWorktree(job, agent) {
     {
       shell: false,
       stdin: built.stdin,
-      timeoutMs: job.timeout_ms
+      timeoutMs: job.timeout_ms,
+      idleTimeoutMs: 3000
     }
   );
 
   const tests = await runTests(executionContext.path, job.test_command || "");
+  const normalizedOutput = normalizeStructuredStdout(run.stdout);
+  const evidenceConflicts = detectEvidenceConflicts(normalizedOutput.parsed_value, tests);
   const artifacts =
     executionContext.mode === "worktree"
       ? await captureGitArtifacts(executionContext.path)
@@ -360,18 +371,17 @@ async function runInWorktree(job, agent) {
         };
 
   const commitMessage = `agent(${safeTaskId}): ${agent} result`;
-  const commit =
-    executionContext.mode === "worktree"
-      ? await gitCommitAll(executionContext.path, commitMessage)
-      : { code: null, stdout: "", stderr: "", timed_out: false };
+  const shouldCommit = shouldCommitWorktree(executionContext.mode, artifacts);
+  const commit = shouldCommit
+    ? await gitCommitAll(executionContext.path, commitMessage)
+    : { code: null, stdout: "", stderr: "", timed_out: false };
 
-  const head =
-    executionContext.mode === "worktree"
-      ? await getHeadSha(executionContext.path)
-      : { ok: false, sha: "", stderr: "" };
+  const head = shouldCommit
+    ? await getHeadSha(executionContext.path)
+    : { ok: false, sha: "", stderr: "" };
 
   const result = {
-    ok: run.code === 0 && !run.timed_out,
+    ok: isTaskSuccessful(run, tests, normalizedOutput.parsed_json_ok),
     task_id: safeTaskId,
     agent,
     cwd: job.cwd,
@@ -382,17 +392,24 @@ async function runInWorktree(job, agent) {
     timed_out: run.timed_out,
     started_at: startedAt,
     finished_at: nowIso(),
-    stdout: run.stdout,
+    stdout: normalizedOutput.stdout,
+    raw_stdout: normalizedOutput.raw_stdout,
     stderr: run.stderr,
+    status_basis: tests.attempted ? "router-tests" : "agent-run",
+    output_analysis: {
+      parsed_json_ok: normalizedOutput.parsed_json_ok,
+      evidence_conflicts: evidenceConflicts
+    },
     tests,
     artifacts,
     commit: {
-      attempted: executionContext.mode === "worktree",
+      attempted: shouldCommit,
       exit_code: commit.code,
       stdout: commit.stdout,
       stderr: commit.stderr,
       timed_out: commit.timed_out || false,
-      head_sha: head.ok ? head.sha : ""
+      head_sha: head.ok ? head.sha : "",
+      skipped_reason: executionContext.mode === "worktree" && !shouldCommit ? "no changes to commit" : ""
     }
   };
 

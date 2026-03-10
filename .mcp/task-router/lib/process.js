@@ -17,12 +17,15 @@ function appendLimited(current, chunk, maxBytes) {
 export function execCmd(command, args, cwd, extraEnv = {}, options = {}) {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+  const idleTimeoutMs = options.idleTimeoutMs ?? null;
 
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let idleTerminated = false;
     let settled = false;
+    let idleTimer = null;
 
     const child = spawn(command, args, {
       cwd,
@@ -34,7 +37,17 @@ export function execCmd(command, args, cwd, extraEnv = {}, options = {}) {
     const finish = (payload) => {
       if (settled) return;
       settled = true;
+      if (idleTimer) clearTimeout(idleTimer);
       resolve(payload);
+    };
+
+    const resetIdleTimer = () => {
+      if (!idleTimeoutMs || settled) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idleTerminated = true;
+        child.kill("SIGKILL");
+      }, idleTimeoutMs);
     };
 
     const timer = setTimeout(() => {
@@ -53,10 +66,12 @@ export function execCmd(command, args, cwd, extraEnv = {}, options = {}) {
 
     child.stdout.on("data", (buf) => {
       stdout = appendLimited(stdout, buf, maxOutputBytes);
+      resetIdleTimer();
     });
 
     child.stderr.on("data", (buf) => {
       stderr = appendLimited(stderr, buf, maxOutputBytes);
+      resetIdleTimer();
     });
 
     child.on("close", (code) => {
@@ -65,7 +80,8 @@ export function execCmd(command, args, cwd, extraEnv = {}, options = {}) {
         code: timedOut ? null : code,
         stdout,
         stderr,
-        timed_out: timedOut
+        timed_out: timedOut,
+        idle_terminated: idleTerminated
       });
     });
   });
