@@ -278,7 +278,21 @@ async function runInWorktree(job, agent) {
     };
   }
 
-  const built = buildArgs(agent, job.prompt);
+  let built;
+  try {
+    built = buildArgs(agent, job.prompt);
+  } catch (err) {
+    return {
+      ok: false,
+      task_id: job.task_id,
+      agent,
+      cwd: repoRoot,
+      worktree: executionContext,
+      exit_code: 1,
+      stdout: "",
+      stderr: `buildArgs failed: ${err.message}`
+    };
+  }
   const startedAt = nowIso();
   const run = await execCmd(built.command, built.args, executionContext.path, built.env || {}, { shell: false, stdin: built.stdin });
   const tests = await runTests(executionContext.path, job.test_command || "");
