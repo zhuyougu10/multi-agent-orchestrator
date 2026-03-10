@@ -54,6 +54,7 @@ task_plan.md
 # Agent-specific skills (installed by setup.ps1)
 .codex/
 .gemini/
+.opencode/skills/
 
 # Package locks (optional, uncomment if needed)
 # package-lock.json
