@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { launchDispatch } from "./dispatch.js";
+import { resolveExecutionContext } from "./runtime.js";
+import { buildArgs } from "./runner.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,24 +69,6 @@ function chooseAgent(taskType, preferredAgent) {
 
 function alternateAgent(agent) {
   return agent === "codex" ? "gemini" : "codex";
-}
-
-function buildArgs(agent, prompt) {
-  if (agent === "codex") {
-    return {
-      command: "powershell",
-      args: ["-NoProfile", "-Command", "codex exec --sandbox workspace-write -"],
-      stdin: prompt
-    };
-  }
-  if (agent === "gemini") {
-    return {
-      command: "powershell",
-      args: ["-NoProfile", "-Command", "gemini -p _ --output-format text -y"],
-      stdin: prompt
-    };
-  }
-  throw new Error(`Unsupported agent: ${agent}`);
 }
 
 function execCmd(command, args, cwd, extraEnv = {}, options = {}) {
@@ -279,37 +264,44 @@ async function abortCherryPick(repoRoot) {
 
 async function runInWorktree(job, agent) {
   const repoRoot = job.cwd;
-  const wt = await createWorktree(repoRoot, job.task_id, agent);
-  if (!wt.created_ok) {
+  const executionContext = await resolveExecutionContext(repoRoot, job.task_id, agent, createWorktree);
+  if (!executionContext.created_ok) {
     return {
       ok: false,
       task_id: job.task_id,
       agent,
       cwd: repoRoot,
-      worktree: wt,
+      worktree: executionContext,
       exit_code: 1,
       stdout: "",
-      stderr: `worktree creation failed\n${wt.stderr}`
+      stderr: `worktree creation failed\n${executionContext.stderr}`
     };
   }
 
   const built = buildArgs(agent, job.prompt);
   const startedAt = nowIso();
-  const run = await execCmd(built.command, built.args, wt.path, built.env || {}, { shell: false, stdin: built.stdin });
-  const tests = await runTests(wt.path, job.test_command || "");
-  const artifacts = await captureGitArtifacts(wt.path);
+  const run = await execCmd(built.command, built.args, executionContext.path, built.env || {}, { shell: false, stdin: built.stdin });
+  const tests = await runTests(executionContext.path, job.test_command || "");
+  const artifacts = executionContext.mode === "worktree"
+    ? await captureGitArtifacts(executionContext.path)
+    : { git_status: "", git_diff_stat: "", git_diff: "" };
 
   const commitMessage = `agent(${job.task_id}): ${agent} result`;
-  const commit = await gitCommitAll(wt.path, commitMessage);
-  const head = await getHeadSha(wt.path);
+  const commit = executionContext.mode === "worktree"
+    ? await gitCommitAll(executionContext.path, commitMessage)
+    : { code: null, stdout: "", stderr: "" };
+  const head = executionContext.mode === "worktree"
+    ? await getHeadSha(executionContext.path)
+    : { ok: false, sha: "", stderr: "" };
 
   const result = {
     ok: run.code === 0,
     task_id: job.task_id,
     agent,
     cwd: repoRoot,
-    worktree_path: wt.path,
-    worktree_branch: wt.branch,
+    execution_mode: executionContext.mode,
+    worktree_path: executionContext.mode === "worktree" ? executionContext.path : "",
+    worktree_branch: executionContext.mode === "worktree" ? executionContext.branch : "",
     exit_code: run.code,
     started_at: startedAt,
     finished_at: nowIso(),
@@ -318,7 +310,7 @@ async function runInWorktree(job, agent) {
     tests,
     artifacts,
     commit: {
-      attempted: true,
+      attempted: executionContext.mode === "worktree",
       exit_code: commit.code,
       stdout: commit.stdout,
       stderr: commit.stderr,
@@ -436,47 +428,23 @@ server.tool(
     };
     writeJson(jobFile(task_id), job);
 
-    let payload;
-    if (mode === "single") {
-      const r = await runSingle(job, chosen);
-      payload = {
-        ok: r.ok,
-        task_id,
-        selected_agent: chosen,
-        mode,
-        result_files: [resultFile(task_id, chosen)],
-        bundle_files: [bundleFile(task_id, chosen)]
-      };
-    } else if (mode === "fallback") {
-      const outcome = await runFallback(job, chosen);
-      payload = {
-        ok: true,
-        task_id,
-        selected_agent: outcome.selected_agent,
-        mode,
-        result_files: outcome.results.map((r) => resultFile(task_id, r.agent)),
-        bundle_files: outcome.results.map((r) => bundleFile(task_id, r.agent))
-      };
-    } else {
-      const outcome = await runRace(job);
-      const sa = readJson(scoreFile(task_id, "codex"));
-      const sb = readJson(scoreFile(task_id, "gemini"));
-      const winner = sa.score >= sb.score ? "codex" : "gemini";
-      const wb = readJson(bundleFile(task_id, winner));
-      wb.selected = true;
-      writeJson(bundleFile(task_id, winner), wb);
-      payload = {
-        ok: true,
-        task_id,
-        selected_agent: winner,
-        mode,
-        scores: [sa, sb],
-        result_files: [resultFile(task_id, "codex"), resultFile(task_id, "gemini")],
-        bundle_files: [bundleFile(task_id, "codex"), bundleFile(task_id, "gemini")]
-      };
-    }
+    const payload = launchDispatch({
+      job,
+      selectedAgent: chosen,
+      mode,
+      runners: {
+        runSingle,
+        runFallback,
+        runRace
+      },
+      writeResultIndex: (resultPayload) => writeJson(resultFile(task_id), resultPayload),
+      paths: {
+        resultFile,
+        bundleFile
+      },
+      alternateAgent
+    });
 
-    writeJson(resultFile(task_id), payload);
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
   }
 );

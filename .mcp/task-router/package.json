@@ -6,7 +6,8 @@
   "description": "MCP server for multi-agent task routing",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
