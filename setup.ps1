@@ -1,5 +1,3 @@
-$ErrorActionPreference = "Stop"
-
 param(
     [string]$GitHubRepo = "",
     [string]$Branch = "master",
@@ -7,6 +5,8 @@ param(
     [switch]$SkipMCP,
     [switch]$Force
 )
+
+$ErrorActionPreference = "Stop"
 
 $ScriptDir = $PSScriptRoot
 $ProjectRoot = (Get-Location).Path
@@ -200,7 +200,15 @@ function Install-ProjectComponents {
         @{ Path = ".opencode/agents/executor.md"; Dest = ".opencode\agents\executor.md" },
         @{ Path = ".opencode/opencode.json"; Dest = ".opencode\opencode.json" },
         @{ Path = ".mcp/task-router/package.json"; Dest = ".mcp\task-router\package.json" },
+        @{ Path = ".mcp/task-router/package-lock.json"; Dest = ".mcp\task-router\package-lock.json" },
         @{ Path = ".mcp/task-router/server.js"; Dest = ".mcp\task-router\server.js" },
+        @{ Path = ".mcp/task-router/dispatch.js"; Dest = ".mcp\task-router\dispatch.js" },
+        @{ Path = ".mcp/task-router/runtime.js"; Dest = ".mcp\task-router\runtime.js" },
+        @{ Path = ".mcp/task-router/runner.js"; Dest = ".mcp\task-router\runner.js" },
+        @{ Path = ".mcp/task-router/lib/paths.js"; Dest = ".mcp\task-router\lib\paths.js" },
+        @{ Path = ".mcp/task-router/lib/process.js"; Dest = ".mcp\task-router\lib\process.js" },
+        @{ Path = ".mcp/task-router/lib/storage.js"; Dest = ".mcp\task-router\lib\storage.js" },
+        @{ Path = ".mcp/task-router/lib/validation.js"; Dest = ".mcp\task-router\lib\validation.js" },
         @{ Path = "AGENTS.md"; Dest = "AGENTS.md" },
         @{ Path = "templates/implementation-template.md"; Dest = "templates\implementation-template.md" },
         @{ Path = "templates/docs-template.md"; Dest = "templates\docs-template.md" },
@@ -232,16 +240,28 @@ function Install-MCPDependencies {
     
     if (!(Test-Path $mcpPath)) {
         Write-Host "  [SKIP] MCP directory not found" -ForegroundColor Gray
-        return
+        return $false
     }
     
     Push-Location $mcpPath
     try {
-        npm install --silent 2>$null
-        Write-Host "  [OK] MCP dependencies installed" -ForegroundColor Green
+        $npmAction = if (Test-Path (Join-Path $mcpPath "package-lock.json")) { "ci" } else { "install" }
+        npm $npmAction --silent 2>$null
+        $npmExit = $LASTEXITCODE
+        if ($npmExit -ne 0) {
+            Write-Host "  [FAIL] npm $npmAction failed with exit code $npmExit" -ForegroundColor Red
+            return $false
+        }
+        if (!(Test-Path (Join-Path $mcpPath "node_modules"))) {
+            Write-Host "  [FAIL] node_modules missing after npm $npmAction" -ForegroundColor Red
+            return $false
+        }
+        Write-Host "  [OK] MCP dependencies installed via npm $npmAction" -ForegroundColor Green
+        return $true
     }
     catch {
         Write-Host "  [FAIL] npm install failed: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
     }
     finally {
         Pop-Location
@@ -300,6 +320,35 @@ function Test-Installation {
     }
     
     if (!$SkipMCP) {
+        Write-Host "Checking MCP task-router files..." -ForegroundColor Yellow
+        $requiredMcpFiles = @(
+            ".mcp\task-router\server.js",
+            ".mcp\task-router\dispatch.js",
+            ".mcp\task-router\runtime.js",
+            ".mcp\task-router\runner.js",
+            ".mcp\task-router\lib\paths.js",
+            ".mcp\task-router\lib\process.js",
+            ".mcp\task-router\lib\storage.js",
+            ".mcp\task-router\lib\validation.js"
+        )
+        $missingMcpFiles = @()
+        foreach ($file in $requiredMcpFiles) {
+            $fullPath = Join-Path $ProjectRoot $file
+            if (!(Test-Path $fullPath)) {
+                $missingMcpFiles += $file
+            }
+        }
+        if ($missingMcpFiles.Count -eq 0) {
+            Write-Host "  [OK] MCP task-router files complete" -ForegroundColor Green
+        }
+        else {
+            Write-Host "  [FAIL] Missing MCP files:" -ForegroundColor Red
+            foreach ($missing in $missingMcpFiles) {
+                Write-Host "    - $missing" -ForegroundColor Gray
+            }
+            $allOk = $false
+        }
+
         Write-Host "Checking MCP dependencies..." -ForegroundColor Yellow
         if (Test-Path "$ProjectRoot\.mcp\task-router\node_modules") {
             Write-Host "  [OK] MCP dependencies installed" -ForegroundColor Green
@@ -350,11 +399,15 @@ if ($GitHubRepo) {
     Install-ProjectComponents -Repo $GitHubRepo -Branch $Branch
 }
 
+$mcpInstallOk = $true
 if (!$SkipMCP) {
-    Install-MCPDependencies
+    $mcpInstallOk = Install-MCPDependencies
 }
 
 $success = Test-Installation
+if (-not $mcpInstallOk) {
+    $success = $false
+}
 
 Write-Host ""
 Write-Host "=== Setup Complete ===" -ForegroundColor Cyan
