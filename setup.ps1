@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 param(
     [string]$GitHubRepo = "",
-    [string]$Branch = "main",
+    [string]$Branch = "master",
     [switch]$SkipGlobalSkills,
     [switch]$SkipMCP,
     [switch]$Force
