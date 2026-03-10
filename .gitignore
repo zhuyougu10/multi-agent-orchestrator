@@ -17,6 +17,7 @@ out/
 # IDE
 .idea/
 .vscode/
+.trae/
 *.swp
 *.swo
 *~
@@ -30,7 +31,7 @@ desktop.ini
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
+yarn-error.log
 
 # Environment
 .env
@@ -44,6 +45,11 @@ yarn-error.log*
 
 # Test coverage
 coverage/
+
+# Project tracking files (user-specific)
+findings.md
+progress.md
+task_plan.md
 
 # Package locks (optional, uncomment if needed)
 # package-lock.json
