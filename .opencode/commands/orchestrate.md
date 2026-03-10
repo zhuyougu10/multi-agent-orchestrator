@@ -7,7 +7,7 @@ Your task is to analyze the current request and create a comprehensive task plan
 Follow this workflow strictly:
 
 1. Read and apply the mandatory skills:
-   - superpowers
+   - using-superpowers
    - planning-with-files
 
 2. Analyze the request:

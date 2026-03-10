@@ -24,6 +24,7 @@ import {
   isRunSuccessful,
   isTaskSuccessful,
   normalizeStructuredStdout,
+  scoreRunStatus,
   shouldCommitWorktree
 } from "./lib/result-utils.js";
 import { sanitizeTaskId } from "./lib/validation.js";
@@ -171,11 +172,11 @@ function scopeSignals(filesScope, diffNames = []) {
 function computeScore({ result, outputSchema, filesScope }) {
   let score = 100;
   const notes = [];
+  const parsed = tryParseJson(result.stdout || "");
+  const runStatus = scoreRunStatus(result, parsed.ok);
 
-  if (!isRunSuccessful({ code: result.exit_code, timed_out: result.timed_out, idle_terminated: result.idle_terminated }, parsed.ok)) {
-    score -= 35;
-    notes.push("command exit_code != 0");
-  }
+  score -= runStatus.penalty;
+  notes.push(...runStatus.notes);
   if (result.timed_out) {
     score -= 40;
     notes.push("command timed out");
@@ -189,7 +190,6 @@ function computeScore({ result, outputSchema, filesScope }) {
     notes.push("stderr not empty");
   }
 
-  const parsed = tryParseJson(result.stdout || "");
   if (!parsed.ok) {
     score -= 20;
     notes.push("stdout is not valid JSON");

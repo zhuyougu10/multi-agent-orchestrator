@@ -88,6 +88,17 @@ export function isRunSuccessful(run, parsedJsonOk = false) {
   return (!run.timed_out && run.code === 0) || (!run.timed_out && run.idle_terminated && parsedJsonOk);
 }
 
+export function scoreRunStatus(result, parsedJsonOk = false) {
+  if (isRunSuccessful({ code: result.exit_code, timed_out: result.timed_out, idle_terminated: result.idle_terminated }, parsedJsonOk)) {
+    return { penalty: 0, notes: [] };
+  }
+
+  return {
+    penalty: 35,
+    notes: ["command exit_code != 0"]
+  };
+}
+
 export function isTaskSuccessful(run, tests, parsedJsonOk = false) {
   const runOk = isRunSuccessful(run, parsedJsonOk);
   if (!runOk) {

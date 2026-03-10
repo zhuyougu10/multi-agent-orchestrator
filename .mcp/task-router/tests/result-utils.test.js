@@ -5,6 +5,7 @@ import {
   detectEvidenceConflicts,
   extractJsonObject,
   isRunSuccessful,
+  scoreRunStatus,
   normalizeStructuredStdout,
   shouldCommitWorktree,
   isTaskSuccessful
@@ -75,6 +76,16 @@ test("isRunSuccessful accepts idle-terminated run with parsed json output", () =
   );
 
   assert.equal(ok, true);
+});
+
+test("scoreRunStatus does not penalize idle-terminated parsed-json success", () => {
+  const scored = scoreRunStatus(
+    { exit_code: null, timed_out: false, idle_terminated: true },
+    true
+  );
+
+  assert.equal(scored.penalty, 0);
+  assert.deepEqual(scored.notes, []);
 });
 
 test("detectEvidenceConflicts flags mismatch between parsed failures and passing router tests", () => {
