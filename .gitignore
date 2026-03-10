@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# MCP work directories
+.mcp/task-router/work/jobs/
+.mcp/task-router/work/results/
+.mcp/task-router/work/scores/
+.mcp/task-router/work/bundles/
+.mcp/task-router/work/worktrees/
+.mcp/task-router/work/patches/
+
+# Build output
+dist/
+build/
+out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Test coverage
+coverage/
+
+# Package locks (optional, uncomment if needed)
+# package-lock.json
+# yarn.lock
