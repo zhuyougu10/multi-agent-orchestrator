@@ -190,7 +190,8 @@ opencode
 使用 orchestrator agent 分析并执行这个需求：
 1. 先调用 /orchestrate 拆解任务
 2. 再调用 /delegate 分发给 Codex 或 Gemini
-3. 完成后依次执行 /review、/merge、/finalize
+3. 再调用 /watch 显示任务面板并等待全部任务结束
+4. 完成后依次执行 /review、/merge、/finalize
 ```
 
 ### 1. 分析任务
@@ -209,9 +210,22 @@ OpenCode 会分析需求，创建任务计划文件。
 
 根据任务类型自动路由到 Codex 或 Gemini，并进入阻塞式任务面板。
 
-- 分发完成后会显示任务列表面板
+根据任务类型自动路由到 Codex 或 Gemini，并立即返回。
+
+- `/delegate` 只负责派发与记录任务
+- 如果要查看任务面板并等待任务结束，请运行 `/watch`
+
+### 3. 查看任务面板
+
+```
+/watch
+```
+
+`/watch` 会调用代码层的阻塞 watcher（`watch_task_group_blocking`），直到所有任务都进入 `completed` 或 `failed` 才返回。
+
+- 会显示任务列表面板
 - 面板会周期性刷新，展示每个任务的状态、最近心跳、最近事件
-- 只要还有任务未进入 `completed` 或 `failed`，`/delegate` 就不会结束
+- 只要还有任务未进入 `completed` 或 `failed`，`/watch` 就不会结束
 - 只有当所有任务都结束后，agent 才会进入下一步动作，例如 `/review`
 
 示例面板：
@@ -223,15 +237,15 @@ task-a | gemini | running   | 2026-03-12T12:00:05.000Z | heartbeat
 task-b | codex  | completed | 2026-03-12T12:00:08.000Z | completed
 ```
 
-### 3. 审核结果
+### 4. 审核结果
 
 ```
 /review
 ```
 
-在 `/delegate` 已经等待所有任务结束之后，收集结果，评分选优，决定是否需要修复。
+在 `/watch` 已经等待所有任务结束之后，收集结果，评分选优，决定是否需要修复。
 
-### 4. 合并结果
+### 5. 合并结果
 
 ```
 /merge
@@ -239,7 +253,7 @@ task-b | codex  | completed | 2026-03-12T12:00:08.000Z | completed
 
 使用 patch 或 cherry-pick 策略合并赢家结果。
 
-### 5. 完成清理
+### 6. 完成清理
 
 ```
 /finalize

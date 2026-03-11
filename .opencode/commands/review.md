@@ -7,7 +7,7 @@ Your task is to review all delegated task results and make decisions.
 Follow this workflow strictly:
 
 1. Read progress.md to identify completed tasks
-   - Assume `/delegate` has already blocked until every dispatched task is terminal
+   - Assume `/watch` has already blocked until every relevant dispatched task is terminal
    - Do not start `/review` for tasks that are still running
 
 2. For each completed task:
@@ -39,7 +39,7 @@ Follow this workflow strictly:
     - Mark tasks as reviewed
 
 4. Preconditions:
-   - `/delegate` must already have finished its blocking task panel loop
+   - `/watch` must already have finished its blocking task panel loop
    - Every task under review must already be terminal (`completed` or `failed`)
 
 5. Review criteria:

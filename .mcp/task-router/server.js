@@ -31,7 +31,7 @@ import {
 import { sanitizeTaskId } from "./lib/validation.js";
 import { createTaskEventHub } from "./lib/task-events.js";
 import { selectCollectedPayload } from "./lib/result-collection.js";
-import { applyTaskEvents, createTaskPanelState, allTasksTerminal, renderTaskPanel, summarizeTaskPanel } from "./lib/task-panel.js";
+import { applyTaskEvents, collectPanelSnapshotsUntilTerminal, createTaskPanelState, allTasksTerminal, renderTaskPanel, summarizeTaskPanel } from "./lib/task-panel.js";
 
 ensureDirs();
 
@@ -757,6 +757,67 @@ server.tool(
           all_terminal: allTasksTerminal(state),
           panel_text: renderTaskPanel(state)
         }, null, 2)
+      }]
+    };
+  }
+);
+
+server.tool(
+  "watch_task_group_blocking",
+  {
+    tasks: z.array(z.object({
+      task_id: z.string(),
+      agent: z.string().optional(),
+      cursor: z.number().int().min(0).default(0)
+    })),
+    wait_ms: z.number().int().min(0).max(30000).default(5500)
+  },
+  async ({ tasks, wait_ms }) => {
+    const result = await collectPanelSnapshotsUntilTerminal(
+      tasks.map((task) => ({
+        task_id: sanitizeTaskId(task.task_id),
+        agent: task.agent ?? null,
+        cursor: task.cursor ?? 0
+      })),
+      ({ tasks: nextTasks, waitMs }) => {
+        const state = createTaskPanelState(nextTasks.map((task) => ({
+          task_id: sanitizeTaskId(task.task_id),
+          agent: task.agent ?? null,
+          cursor: task.cursor ?? 0
+        })));
+
+        return Promise.all(state.tasks.map(async (task) => {
+          const payload = await taskEventHub.waitForEvents(task.task_id, task.agent, {
+            cursor: task.cursor,
+            timeoutMs: waitMs
+          });
+
+          if (payload.events.length === 0) {
+            const fallbackEvents = storedTerminalEvents(task.task_id, task.agent).map((entry, index) => ({
+              ...entry,
+              cursor: task.cursor + index + 1
+            }));
+            if (fallbackEvents.length > 0) {
+              applyTaskEvents(state, task.task_id, task.agent, fallbackEvents);
+              return;
+            }
+          }
+
+          applyTaskEvents(state, task.task_id, task.agent, payload.events);
+        })).then(() => ({
+          tasks: state.tasks,
+          summary: summarizeTaskPanel(state),
+          all_terminal: allTasksTerminal(state),
+          panel_text: renderTaskPanel(state)
+        }));
+      },
+      wait_ms
+    );
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
       }]
     };
   }

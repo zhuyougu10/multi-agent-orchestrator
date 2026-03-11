@@ -87,3 +87,25 @@ export function renderTaskPanel(state) {
   }
   return lines.join("\n");
 }
+
+export async function collectPanelSnapshotsUntilTerminal(tasks, watcher, waitMs) {
+  let currentTasks = tasks.map((task) => ({ ...task }));
+  const panelHistory = [];
+  let latest = null;
+
+  while (true) {
+    latest = await watcher({ tasks: currentTasks, waitMs });
+    panelHistory.push(latest.panel_text);
+    if (latest.all_terminal) {
+      return {
+        ...latest,
+        panel_history: panelHistory
+      };
+    }
+    currentTasks = latest.tasks.map((task) => ({
+      task_id: task.task_id,
+      agent: task.agent,
+      cursor: task.cursor
+    }));
+  }
+}
