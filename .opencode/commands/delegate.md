@@ -28,23 +28,46 @@ Follow this workflow strictly:
       - mode: single, fallback, or race
       - test_command: if applicable
 
-   c. Call MCP tool:
-      - task-router.dispatch_task with the prepared parameters
+    c. Call MCP tool:
+       - task-router.dispatch_task with the prepared parameters
 
-   d. Record the dispatch in progress.md
+    d. Record the dispatch in progress.md
 
 3. After dispatch:
-   - Wait for results (or proceed with other tasks if parallel)
-   - Call task-router.collect_result for each task
-   - Record results in progress.md
+   - Build an in-memory task state table for every dispatched task
+   - For each task, track at least:
+     - task_id
+     - agent
+     - status
+     - cursor
+     - last_heartbeat_at
+     - last_event_type
+     - started_at
+     - finished_at
+     - short failure message if available
+   - Enter a blocking wait loop immediately after all dispatches complete
+   - In the wait loop, call task-router.subscribe_task_events for each active task using its latest cursor
+   - Update the task state table after each polling cycle
+   - Re-render a CLI task panel after each refresh with:
+     - summary counts for total/running/completed/failed
+     - one row per task showing task_id, agent, status, last_heartbeat_at, and last_event_type
+   - Emit a short heartbeat/status summary every refresh cycle so the CLI visibly stays alive while tasks are running
+   - Treat both completed and failed tasks as terminal
+   - Do not exit /delegate while any dispatched task is still non-terminal
+   - Only after every dispatched task is terminal:
+     - call task-router.collect_result for each task
+     - record final results in progress.md
+     - return control so the orchestrator can move to the next step
 
 4. Constraints:
     - Do not overlap file scopes between concurrent tasks
     - Keep prompts specific and actionable
     - Require structured JSON output
     - Prefer splitting full-stack work into separate frontend/backend dispatches
+    - Do not begin review, merge, or any next orchestration action until the blocking task panel loop has finished
 
 5. Output:
-   - Dispatch summary
-   - Task IDs dispatched
-   - Agents assigned
+    - Dispatch summary
+    - Task panel summary
+    - Task IDs dispatched
+    - Agents assigned
