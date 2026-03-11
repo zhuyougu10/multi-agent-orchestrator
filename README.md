@@ -386,6 +386,51 @@ $env:GITHUB_TOKEN = "your-github-token"
 - 运行中的任务会每 5 秒发送一次 `heartbeat` 事件
 - 任务结束时会返回 `completed` 或 `failed` 事件
 
+#### 典型使用流程
+
+```text
+1. 调用 task-router.dispatch_task
+   - 获取 task_id
+
+2. 循环调用 task-router.subscribe_task_events
+   - 首次使用 cursor=0
+   - 后续使用上一次返回的 next_cursor
+
+3. 处理返回事件
+   - started: 任务已开始
+   - heartbeat: agent 仍在线执行
+   - stdout / stderr: 运行输出
+   - tests_started / tests_completed: 测试阶段事件
+
+4. 收到 completed 或 failed 后停止订阅
+
+5. 如需最终结构化结果，再调用 task-router.collect_result
+```
+
+#### 事件返回示例
+
+```json
+{
+  "task_id": "demo-task",
+  "agent": "codex",
+  "events": [
+    {
+      "cursor": 3,
+      "event": {
+        "task_id": "demo-task",
+        "agent": "codex",
+        "event_type": "heartbeat",
+        "timestamp": "2026-03-12T12:00:05.000Z",
+        "phase": "agent_run"
+      }
+    }
+  ],
+  "next_cursor": 3,
+  "done": false,
+  "source": "live-stream"
+}
+```
+
 ## 许可证
 
 MIT License
