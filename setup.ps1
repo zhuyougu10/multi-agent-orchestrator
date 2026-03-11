@@ -8,7 +8,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ScriptDir = $PSScriptRoot
 $ProjectRoot = (Get-Location).Path
 $OpenCodeHome = "$env:USERPROFILE\.config\opencode"
 $TempRoot = "$env:TEMP\multi-agent-bootstrap"
@@ -165,11 +164,13 @@ function Install-PlanningWithFiles {
     $templates = @("findings.md", "progress.md", "task_plan.md")
     foreach ($template in $templates) {
         $result = Download-RawFile -Repo "OthmanAdi/planning-with-files" -Branch "master" -Path "templates/$template" -OutputPath "$destPath\templates\$template"
+        $success = $success -and $result
     }
     
     $scripts = @("check-complete.ps1", "check-complete.sh", "init-session.ps1", "init-session.sh", "session-catchup.py")
     foreach ($script in $scripts) {
         $result = Download-RawFile -Repo "OthmanAdi/planning-with-files" -Branch "master" -Path "scripts/$script" -OutputPath "$destPath\scripts\$script"
+        $success = $success -and $result
     }
     
     if ($success) {

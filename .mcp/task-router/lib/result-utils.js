@@ -105,6 +105,12 @@ export function isRunSuccessful(run, parsedJsonOk = false) {
 }
 
 export function scoreRunStatus(result, parsedJsonOk = false) {
+  if (result.timed_out) {
+    return {
+      penalty: 40,
+      notes: ["command timed out"]
+    };
+  }
   if (isRunSuccessful({ code: result.exit_code, timed_out: result.timed_out, idle_terminated: result.idle_terminated }, parsedJsonOk)) {
     return { penalty: 0, notes: [] };
   }

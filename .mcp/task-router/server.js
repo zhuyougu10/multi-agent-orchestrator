@@ -204,10 +204,6 @@ function computeScore({ result, outputSchema, filesScope }) {
 
   score -= runStatus.penalty;
   notes.push(...runStatus.notes);
-  if (result.timed_out) {
-    score -= 40;
-    notes.push("command timed out");
-  }
   if (result.tests?.attempted && result.tests.exit_code !== 0) {
     score -= 20;
     notes.push("tests failed");
@@ -593,9 +589,10 @@ server.tool(
     preferred_agent: z.string().default("auto"),
     mode: z.enum(["single", "fallback", "race"]).default("fallback"),
     test_command: z.string().default(""),
-    output_schema: z.record(z.string()).optional()
+    output_schema: z.record(z.string()).optional(),
+    timeout_ms: z.number().int().min(1000).max(600000).default(300000)
   },
-  async ({ task_id, task_type, cwd, prompt, files_scope, constraints, preferred_agent, mode, test_command, output_schema }) => {
+  async ({ task_id, task_type, cwd, prompt, files_scope, constraints, preferred_agent, mode, test_command, output_schema, timeout_ms }) => {
     const safeTaskId = sanitizeTaskId(task_id);
     const chosen = chooseAgent(task_type, preferred_agent);
     const job = {
@@ -610,6 +607,7 @@ server.tool(
       mode,
       test_command,
       output_schema,
+      timeout_ms,
       created_at: nowIso()
     };
     writeJsonAtomic(jobFile(safeTaskId), job);
@@ -982,7 +980,16 @@ server.tool(
   },
   async ({ cwd, task_id, agent, strategy }) => {
     const safeTaskId = sanitizeTaskId(task_id);
-    const bundle = readJson(bundleFile(safeTaskId, agent));
+    const bundlePath = bundleFile(safeTaskId, agent);
+    if (!exists(bundlePath)) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ ok: false, error: "bundle not found", task_id: safeTaskId, agent }, null, 2)
+        }]
+      };
+    }
+    const bundle = readJson(bundlePath);
 
     if (strategy === "cherry-pick") {
       const sha = bundle?.result?.commit?.head_sha;

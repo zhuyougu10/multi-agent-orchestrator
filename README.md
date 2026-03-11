@@ -411,6 +411,7 @@ multi-agent-orchestrator/
 │       │   ├── storage.js        # 存储工具
 │       │   ├── validation.js     # 验证工具
 │       │   ├── result-utils.js   # 结果处理
+│       │   ├── result-collection.js # 结果收集
 │       │   ├── task-events.js    # 事件系统
 │       │   └── task-panel.js     # 任务面板
 │       ├── tests/                # 测试文件
@@ -423,9 +424,9 @@ multi-agent-orchestrator/
 │   ├── implementation-template.md
 │   ├── docs-template.md
 │   └── repair-template.md
-├── docs/                         # 文档目录
 ├── setup.ps1                     # 安装脚本
-└── README.md                     # 项目说明
+├── README.md                     # 项目说明
+└── LICENSE                       # MIT 许可证
 ```
 
 ---
@@ -451,6 +452,7 @@ multi-agent-orchestrator/
 | `mode` | string | 否 | 执行模式（默认 fallback） |
 | `test_command` | string | 否 | 测试命令 |
 | `output_schema` | object | 否 | 输出 Schema |
+| `timeout_ms` | number | 否 | 超时时间（默认 300000ms，范围 1000-600000） |
 
 **返回：**
 

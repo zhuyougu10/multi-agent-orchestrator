@@ -50,7 +50,7 @@ export function launchDispatch({ job, selectedAgent, mode, runners, writeResultI
       } else if (mode === "fallback") {
         const outcome = await runners.runFallback(job, selectedAgent);
         payload = {
-          ok: true,
+          ok: outcome.ok,
           task_id: job.task_id,
           selected_agent: outcome.selected_agent,
           mode,
@@ -61,7 +61,7 @@ export function launchDispatch({ job, selectedAgent, mode, runners, writeResultI
       } else {
         const outcome = await runners.runRace(job);
         payload = {
-          ok: true,
+          ok: outcome.ok,
           task_id: job.task_id,
           selected_agent: outcome.selected_agent,
           mode,
