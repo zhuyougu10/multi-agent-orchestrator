@@ -79,7 +79,7 @@ function createSubscriber(stream) {
   return subscriber;
 }
 
-export function createTaskEventHub({ historyLimit = 20 } = {}) {
+export function createTaskEventHub({ historyLimit = 20, streamGcDelayMs = 60000 } = {}) {
   const streams = new Map();
 
   function getStream(taskId, agent = null) {
@@ -90,7 +90,16 @@ export function createTaskEventHub({ historyLimit = 20 } = {}) {
     return streams.get(key);
   }
 
-  function applyEvent(stream, event) {
+  function scheduleStreamCleanup(key) {
+    setTimeout(() => {
+      const stream = streams.get(key);
+      if (stream && stream.closed && stream.subscribers.size === 0 && stream.waiters.size === 0) {
+        streams.delete(key);
+      }
+    }, streamGcDelayMs);
+  }
+
+  function applyEvent(stream, event, key) {
     const record = {
       cursor: stream.nextCursor++,
       event
@@ -102,6 +111,8 @@ export function createTaskEventHub({ historyLimit = 20 } = {}) {
     for (const subscriber of stream.subscribers) {
       subscriber.push(event);
     }
+    // 注意：history 裁剪后，waiter 可能丢失历史事件
+    // 如果 waiter 的 cursor 指向已被裁剪的事件，filter 结果将不包含这些事件
     for (const waiter of stream.waiters) {
       waiter({
         events: stream.history.filter((item) => item.cursor > waiter.cursor),
@@ -116,6 +127,9 @@ export function createTaskEventHub({ historyLimit = 20 } = {}) {
         subscriber.close();
       }
       stream.subscribers.clear();
+      if (key) {
+        scheduleStreamCleanup(key);
+      }
     }
   }
 
@@ -123,9 +137,11 @@ export function createTaskEventHub({ historyLimit = 20 } = {}) {
     publish(event) {
       const taskId = event?.task_id;
       const agent = event?.agent ?? null;
-      applyEvent(getStream(taskId, agent), event);
+      const key = streamKey(taskId, agent);
+      const wildcardKey = streamKey(taskId, null);
+      applyEvent(getStream(taskId, agent), event, key);
       if (agent !== null) {
-        applyEvent(getStream(taskId, null), event);
+        applyEvent(getStream(taskId, null), event, wildcardKey);
       }
     },
 

@@ -88,12 +88,30 @@ export function renderTaskPanel(state) {
   return lines.join("\n");
 }
 
-export async function collectPanelSnapshotsUntilTerminal(tasks, watcher, waitMs) {
+export async function collectPanelSnapshotsUntilTerminal(tasks, watcher, waitMs, options = {}) {
+  const { maxRounds = 1000, globalTimeoutMs = 0 } = options;
   let currentTasks = tasks.map((task) => ({ ...task }));
   const panelHistory = [];
   let latest = null;
+  let rounds = 0;
+  const startTime = Date.now();
 
   while (true) {
+    rounds++;
+    if (maxRounds > 0 && rounds > maxRounds) {
+      return {
+        ...latest,
+        panel_history: panelHistory,
+        timeout_reason: "max_rounds_exceeded"
+      };
+    }
+    if (globalTimeoutMs > 0 && Date.now() - startTime > globalTimeoutMs) {
+      return {
+        ...latest,
+        panel_history: panelHistory,
+        timeout_reason: "global_timeout"
+      };
+    }
     latest = await watcher({ tasks: currentTasks, waitMs });
     panelHistory.push(latest.panel_text);
     if (latest.all_terminal) {

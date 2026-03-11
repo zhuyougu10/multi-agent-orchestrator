@@ -21,7 +21,6 @@ import { execCmd } from "./lib/process.js";
 import {
   detectEvidenceConflicts,
   extractJsonObject,
-  isRunSuccessful,
   isStructuredTaskSuccessful,
   normalizeStructuredStdout,
   scoreRunStatus,
