@@ -89,7 +89,7 @@ export function renderTaskPanel(state) {
 }
 
 export async function collectPanelSnapshotsUntilTerminal(tasks, watcher, waitMs, options = {}) {
-  const { maxRounds = 1000, globalTimeoutMs = 0 } = options;
+  const { maxRounds = 120, globalTimeoutMs = 0 } = options;
   let currentTasks = tasks.map((task) => ({ ...task }));
   const panelHistory = [];
   let latest = null;
@@ -100,14 +100,18 @@ export async function collectPanelSnapshotsUntilTerminal(tasks, watcher, waitMs,
     rounds++;
     if (maxRounds > 0 && rounds > maxRounds) {
       return {
-        ...latest,
+        all_terminal: latest?.all_terminal ?? false,
+        tasks: latest?.tasks ?? currentTasks,
+        panel_text: latest?.panel_text ?? "",
         panel_history: panelHistory,
         timeout_reason: "max_rounds_exceeded"
       };
     }
     if (globalTimeoutMs > 0 && Date.now() - startTime > globalTimeoutMs) {
       return {
-        ...latest,
+        all_terminal: latest?.all_terminal ?? false,
+        tasks: latest?.tasks ?? currentTasks,
+        panel_text: latest?.panel_text ?? "",
         panel_history: panelHistory,
         timeout_reason: "global_timeout"
       };

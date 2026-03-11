@@ -1,3 +1,5 @@
+// 注意：agent 应为有效字符串或 null，不应为空字符串 ""
+// 空字符串会被 `||` 转换为 "*"，可能导致意外的 wildcard 匹配
 function streamKey(taskId, agent = null) {
   return `${taskId}::${agent || "*"}`;
 }
