@@ -425,8 +425,7 @@ multi-agent-orchestrator/
 │   └── repair-template.md
 ├── docs/                         # 文档目录
 ├── setup.ps1                     # 安装脚本
-├── README.md                     # 项目说明
-└── AGENTS.md                     # 项目自定义说明
+└── README.md                     # 项目说明
 ```
 
 ---
@@ -585,10 +584,6 @@ multi-agent-orchestrator/
   }
 }
 ```
-
-### AGENTS.md
-
-项目自定义说明文件，用于存放项目特定的指令和说明。该文件不会被自动加载，可以自由添加个人或项目级默认指令。
 
 ---
 

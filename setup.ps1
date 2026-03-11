@@ -212,7 +212,6 @@ function Install-ProjectComponents {
         @{ Path = ".mcp/task-router/lib/task-events.js"; Dest = ".mcp\task-router\lib\task-events.js" },
         @{ Path = ".mcp/task-router/lib/task-panel.js"; Dest = ".mcp\task-router\lib\task-panel.js" },
         @{ Path = ".mcp/task-router/lib/result-collection.js"; Dest = ".mcp\task-router\lib\result-collection.js" },
-        @{ Path = "AGENTS.md"; Dest = "AGENTS.md" },
         @{ Path = "templates/implementation-template.md"; Dest = "templates\implementation-template.md" },
         @{ Path = "templates/docs-template.md"; Dest = "templates\docs-template.md" },
         @{ Path = "templates/repair-template.md"; Dest = "templates\repair-template.md" }
@@ -364,15 +363,6 @@ function Test-Installation {
             Write-Host "  [FAIL] MCP dependencies not installed" -ForegroundColor Red
             $allOk = $false
         }
-    }
-    
-    Write-Host "Checking AGENTS.md..." -ForegroundColor Yellow
-    if (Test-Path "$ProjectRoot\AGENTS.md") {
-        Write-Host "  [OK] AGENTS.md exists" -ForegroundColor Green
-    }
-    else {
-        Write-Host "  [FAIL] AGENTS.md not found" -ForegroundColor Red
-        $allOk = $false
     }
     
     Write-Host "Checking .opencode/opencode.json..." -ForegroundColor Yellow
