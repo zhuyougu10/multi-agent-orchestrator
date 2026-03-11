@@ -28,11 +28,51 @@ import {
   shouldCommitWorktree
 } from "./lib/result-utils.js";
 import { sanitizeTaskId } from "./lib/validation.js";
+import { createTaskEventHub } from "./lib/task-events.js";
 
 ensureDirs();
 
+const HEARTBEAT_INTERVAL_MS = 5000;
+const taskEventHub = createTaskEventHub();
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function publishTaskEvent(taskId, agent, eventType, details = {}) {
+  taskEventHub.publish({
+    task_id: taskId,
+    agent,
+    event_type: eventType,
+    timestamp: nowIso(),
+    ...details
+  });
+}
+
+function storedTerminalEvents(taskId, agent) {
+  const safeTaskId = sanitizeTaskId(taskId);
+  const agents = agent ? [agent] : ["codex", "gemini"];
+  const events = [];
+
+  for (const candidate of agents) {
+    const file = resultFile(safeTaskId, candidate);
+    if (!exists(file)) continue;
+    const result = readJson(file);
+    events.push({
+      cursor: 0,
+      event: {
+        task_id: safeTaskId,
+        agent: candidate,
+        event_type: result.ok ? "completed" : "failed",
+        timestamp: result.finished_at || nowIso(),
+        exit_code: result.exit_code,
+        timed_out: result.timed_out,
+        status_basis: result.status_basis
+      }
+    });
+  }
+
+  return events;
 }
 
 function chooseAgent(taskType, preferredAgent) {
@@ -259,6 +299,10 @@ async function runInWorktree(job, agent) {
   );
 
   if (!executionContext.created_ok) {
+    publishTaskEvent(safeTaskId, agent, "failed", {
+      phase: "setup",
+      message: executionContext.stderr || "worktree creation failed"
+    });
     const failed = {
       ok: false,
       task_id: safeTaskId,
@@ -305,6 +349,10 @@ async function runInWorktree(job, agent) {
   try {
     built = buildArgs(agent, job.prompt);
   } catch (err) {
+    publishTaskEvent(safeTaskId, agent, "failed", {
+      phase: "build_args",
+      message: err.message
+    });
     const failed = {
       ok: false,
       task_id: safeTaskId,
@@ -344,6 +392,15 @@ async function runInWorktree(job, agent) {
   }
 
   const startedAt = nowIso();
+  publishTaskEvent(safeTaskId, agent, "started", {
+    execution_mode: executionContext.mode,
+    worktree_path: executionContext.mode === "worktree" ? executionContext.path : ""
+  });
+  const heartbeat = setInterval(() => {
+    publishTaskEvent(safeTaskId, agent, "heartbeat", {
+      phase: "agent_run"
+    });
+  }, HEARTBEAT_INTERVAL_MS);
   const run = await execCmd(
     built.command,
     built.args,
@@ -352,12 +409,31 @@ async function runInWorktree(job, agent) {
     {
       shell: false,
       stdin: built.stdin,
+      onStdout: (buf) => {
+        publishTaskEvent(safeTaskId, agent, "stdout", {
+          chunk: buf.toString()
+        });
+      },
+      onStderr: (buf) => {
+        publishTaskEvent(safeTaskId, agent, "stderr", {
+          chunk: buf.toString()
+        });
+      },
       timeoutMs: job.timeout_ms,
       idleTimeoutMs: 3000
     }
   );
+  clearInterval(heartbeat);
 
+  publishTaskEvent(safeTaskId, agent, "tests_started", {
+    command: job.test_command || ""
+  });
   const tests = await runTests(executionContext.path, job.test_command || "");
+  publishTaskEvent(safeTaskId, agent, "tests_completed", {
+    attempted: tests.attempted,
+    exit_code: tests.exit_code,
+    timed_out: tests.timed_out || false
+  });
   const normalizedOutput = normalizeStructuredStdout(run.stdout);
   const evidenceConflicts = detectEvidenceConflicts(normalizedOutput.parsed_value, tests);
   const artifacts =
@@ -412,6 +488,12 @@ async function runInWorktree(job, agent) {
       skipped_reason: executionContext.mode === "worktree" && !shouldCommit ? "no changes to commit" : ""
     }
   };
+
+  publishTaskEvent(safeTaskId, agent, result.ok ? "completed" : "failed", {
+    exit_code: result.exit_code,
+    timed_out: result.timed_out,
+    status_basis: result.status_basis
+  });
 
   writeJsonAtomic(resultFile(safeTaskId, agent), result);
 
@@ -575,6 +657,59 @@ server.tool(
       };
     }
     return { content: [{ type: "text", text: JSON.stringify(readJson(file), null, 2) }] };
+  }
+);
+
+server.tool(
+  "subscribe_task_events",
+  {
+    task_id: z.string(),
+    agent: z.string().optional(),
+    cursor: z.number().int().min(0).default(0),
+    wait_ms: z.number().int().min(0).max(30000).default(5500)
+  },
+  async ({ task_id, agent, cursor, wait_ms }) => {
+    const safeTaskId = sanitizeTaskId(task_id);
+    const payload = await taskEventHub.waitForEvents(safeTaskId, agent ?? null, {
+      cursor,
+      timeoutMs: wait_ms
+    });
+
+    if (payload.events.length === 0) {
+      const fallbackEvents = storedTerminalEvents(safeTaskId, agent).map((entry, index) => ({
+        ...entry,
+        cursor: cursor + index + 1
+      }));
+      if (fallbackEvents.length > 0) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              task_id: safeTaskId,
+              agent: agent || null,
+              events: fallbackEvents,
+              next_cursor: fallbackEvents.at(-1).cursor,
+              done: true,
+              source: "stored-result"
+            }, null, 2)
+          }]
+        };
+      }
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          task_id: safeTaskId,
+          agent: agent || null,
+          events: payload.events,
+          next_cursor: payload.next_cursor,
+          done: payload.done,
+          source: "live-stream"
+        }, null, 2)
+      }]
+    };
   }
 );
 

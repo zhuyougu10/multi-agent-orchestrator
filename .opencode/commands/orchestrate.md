@@ -28,8 +28,14 @@ Follow this workflow strictly:
    - Set dependencies between tasks
 
 5. Task type routing:
-   - implementation, refactor, tests, bugfix, script → Codex preferred
-   - docs, summarization, comparison, ux-copy → Gemini preferred
+    - implementation, refactor, tests, bugfix, script → Codex preferred
+    - docs, summarization, comparison, ux-copy → Gemini preferred
+    - frontend/UI/UX-focused implementation → Gemini preferred
+    - backend/API/data/test-heavy implementation → Codex preferred
+
+5.5. Domain decomposition rule:
+    - If a request mixes frontend and backend work, split it into separate tasks when possible
+    - Use file scopes that preserve a Gemini-leaning frontend task and a Codex-leaning backend task
 
 6. Mode selection:
    - Most tasks: fallback (try preferred, switch on failure)

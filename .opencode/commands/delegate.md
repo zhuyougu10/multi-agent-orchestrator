@@ -14,8 +14,10 @@ Follow this workflow strictly:
    a. Determine the agent:
       - Use preferred_agent if specified
       - Otherwise route by task type:
-        - implementation, refactor, tests, bugfix, script → Codex
-        - docs, summarization, comparison, ux-copy → Gemini
+         - implementation, refactor, tests, bugfix, script → Codex
+         - docs, summarization, comparison, ux-copy → Gemini
+      - Override toward Gemini for frontend/UI/UX-heavy tasks
+      - Override toward Codex for backend/API/data/test-heavy tasks
 
    b. Prepare the dispatch:
       - task_id: from task_plan.md
@@ -37,9 +39,10 @@ Follow this workflow strictly:
    - Record results in progress.md
 
 4. Constraints:
-   - Do not overlap file scopes between concurrent tasks
-   - Keep prompts specific and actionable
-   - Require structured JSON output
+    - Do not overlap file scopes between concurrent tasks
+    - Keep prompts specific and actionable
+    - Require structured JSON output
+    - Prefer splitting full-stack work into separate frontend/backend dispatches
 
 5. Output:
    - Dispatch summary

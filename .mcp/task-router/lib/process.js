@@ -66,11 +66,13 @@ export function execCmd(command, args, cwd, extraEnv = {}, options = {}) {
 
     child.stdout.on("data", (buf) => {
       stdout = appendLimited(stdout, buf, maxOutputBytes);
+      options.onStdout?.(buf);
       resetIdleTimer();
     });
 
     child.stderr.on("data", (buf) => {
       stderr = appendLimited(stderr, buf, maxOutputBytes);
+      options.onStderr?.(buf);
       resetIdleTimer();
     });
 
