@@ -214,6 +214,15 @@ OpenCode 会分析需求，创建任务计划文件。
 - 只要还有任务未进入 `completed` 或 `failed`，`/delegate` 就不会结束
 - 只有当所有任务都结束后，agent 才会进入下一步动作，例如 `/review`
 
+示例面板：
+
+```text
+Tasks: 2 total | running: 1 | completed: 1 | failed: 0
+
+task-a | gemini | running   | 2026-03-12T12:00:05.000Z | heartbeat
+task-b | codex  | completed | 2026-03-12T12:00:08.000Z | completed
+```
+
 ### 3. 审核结果
 
 ```
@@ -388,6 +397,7 @@ $env:GITHUB_TOKEN = "your-github-token"
 
 - `dispatch_task` 负责启动后台任务并立即返回
 - `subscribe_task_events` 可单独订阅任务事件
+- `watch_task_group` 可聚合多个任务并返回可直接显示的任务面板
 - 运行中的任务会每 5 秒发送一次 `heartbeat` 事件
 - 任务结束时会返回 `completed` 或 `failed` 事件
 

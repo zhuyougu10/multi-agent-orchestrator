@@ -46,11 +46,9 @@ Follow this workflow strictly:
      - finished_at
      - short failure message if available
    - Enter a blocking wait loop immediately after all dispatches complete
-   - In the wait loop, call task-router.subscribe_task_events for each active task using its latest cursor
-   - Update the task state table after each polling cycle
-   - Re-render a CLI task panel after each refresh with:
-     - summary counts for total/running/completed/failed
-     - one row per task showing task_id, agent, status, last_heartbeat_at, and last_event_type
+   - In the wait loop, call task-router.watch_task_group with all tracked tasks and their latest cursors
+   - Replace the local task state table with the returned task list and updated cursors after each polling cycle
+   - Print the returned panel_text to the user on every refresh cycle so the panel is directly visible in the CLI
    - Emit a short heartbeat/status summary every refresh cycle so the CLI visibly stays alive while tasks are running
    - Treat both completed and failed tasks as terminal
    - Do not exit /delegate while any dispatched task is still non-terminal
