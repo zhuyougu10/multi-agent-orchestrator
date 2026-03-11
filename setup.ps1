@@ -191,6 +191,7 @@ function Install-ProjectComponents {
     $components = @(
         @{ Path = ".opencode/commands/orchestrate.md"; Dest = ".opencode\commands\orchestrate.md" },
         @{ Path = ".opencode/commands/delegate.md"; Dest = ".opencode\commands\delegate.md" },
+        @{ Path = ".opencode/commands/watch.md"; Dest = ".opencode\commands\watch.md" },
         @{ Path = ".opencode/commands/review.md"; Dest = ".opencode\commands\review.md" },
         @{ Path = ".opencode/commands/repair.md"; Dest = ".opencode\commands\repair.md" },
         @{ Path = ".opencode/commands/merge.md"; Dest = ".opencode\commands\merge.md" },
@@ -207,6 +208,10 @@ function Install-ProjectComponents {
         @{ Path = ".mcp/task-router/lib/process.js"; Dest = ".mcp\task-router\lib\process.js" },
         @{ Path = ".mcp/task-router/lib/storage.js"; Dest = ".mcp\task-router\lib\storage.js" },
         @{ Path = ".mcp/task-router/lib/validation.js"; Dest = ".mcp\task-router\lib\validation.js" },
+        @{ Path = ".mcp/task-router/lib/result-utils.js"; Dest = ".mcp\task-router\lib\result-utils.js" },
+        @{ Path = ".mcp/task-router/lib/task-events.js"; Dest = ".mcp\task-router\lib\task-events.js" },
+        @{ Path = ".mcp/task-router/lib/task-panel.js"; Dest = ".mcp\task-router\lib\task-panel.js" },
+        @{ Path = ".mcp/task-router/lib/result-collection.js"; Dest = ".mcp\task-router\lib\result-collection.js" },
         @{ Path = "AGENTS.md"; Dest = "AGENTS.md" },
         @{ Path = "templates/implementation-template.md"; Dest = "templates\implementation-template.md" },
         @{ Path = "templates/docs-template.md"; Dest = "templates\docs-template.md" },
@@ -327,7 +332,11 @@ function Test-Installation {
             ".mcp\task-router\lib\paths.js",
             ".mcp\task-router\lib\process.js",
             ".mcp\task-router\lib\storage.js",
-            ".mcp\task-router\lib\validation.js"
+            ".mcp\task-router\lib\validation.js",
+            ".mcp\task-router\lib\result-utils.js",
+            ".mcp\task-router\lib\task-events.js",
+            ".mcp\task-router\lib\task-panel.js",
+            ".mcp\task-router\lib\result-collection.js"
         )
         $missingMcpFiles = @()
         foreach ($file in $requiredMcpFiles) {
