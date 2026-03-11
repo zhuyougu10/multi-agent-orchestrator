@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Documentation
+docs/
+
 # MCP work directories
 .mcp/task-router/work/jobs/
 .mcp/task-router/work/results/
