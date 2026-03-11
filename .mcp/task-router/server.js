@@ -22,13 +22,15 @@ import {
   detectEvidenceConflicts,
   extractJsonObject,
   isRunSuccessful,
-  isTaskSuccessful,
+  isStructuredTaskSuccessful,
   normalizeStructuredStdout,
   scoreRunStatus,
-  shouldCommitWorktree
+  shouldCommitWorktree,
+  validateOutputShape
 } from "./lib/result-utils.js";
 import { sanitizeTaskId } from "./lib/validation.js";
 import { createTaskEventHub } from "./lib/task-events.js";
+import { selectCollectedPayload } from "./lib/result-collection.js";
 
 ensureDirs();
 
@@ -180,22 +182,6 @@ async function getHeadSha(cwd) {
 
 function tryParseJson(text) {
   return extractJsonObject(text);
-}
-
-function validateOutputShape(parsed, outputSchema) {
-  if (!outputSchema || typeof outputSchema !== "object") {
-    return { ok: true, notes: [] };
-  }
-  const notes = [];
-  for (const key of Object.keys(outputSchema)) {
-    if (!(key in parsed)) {
-      notes.push(`missing field: ${key}`);
-    }
-  }
-  return {
-    ok: notes.length === 0,
-    notes
-  };
 }
 
 function scopeSignals(filesScope, diffNames = []) {
@@ -457,7 +443,13 @@ async function runInWorktree(job, agent) {
     : { ok: false, sha: "", stderr: "" };
 
   const result = {
-    ok: isTaskSuccessful(run, tests, normalizedOutput.parsed_json_ok),
+    ok: isStructuredTaskSuccessful(
+      run,
+      tests,
+      normalizedOutput.parsed_json_ok,
+      job.output_schema,
+      normalizedOutput.parsed_value
+    ),
     task_id: safeTaskId,
     agent,
     cwd: job.cwd,
@@ -647,8 +639,13 @@ server.tool(
   { task_id: z.string(), agent: z.string().optional() },
   async ({ task_id, agent }) => {
     const safeTaskId = sanitizeTaskId(task_id);
-    const file = agent ? bundleFile(safeTaskId, agent) : resultFile(safeTaskId);
-    if (!exists(file)) {
+    const bundlePath = agent ? bundleFile(safeTaskId, agent) : null;
+    const resultPath = agent ? resultFile(safeTaskId, agent) : resultFile(safeTaskId);
+    const selected = selectCollectedPayload(
+      bundlePath && exists(bundlePath) ? readJson(bundlePath) : null,
+      exists(resultPath) ? readJson(resultPath) : null
+    );
+    if (!selected) {
       return {
         content: [{
           type: "text",
@@ -656,7 +653,7 @@ server.tool(
         }]
       };
     }
-    return { content: [{ type: "text", text: JSON.stringify(readJson(file), null, 2) }] };
+    return { content: [{ type: "text", text: JSON.stringify(selected, null, 2) }] };
   }
 );
 

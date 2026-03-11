@@ -76,6 +76,22 @@ export function detectEvidenceConflicts(parsedValue, tests) {
   return [];
 }
 
+export function validateOutputShape(parsed, outputSchema) {
+  if (!outputSchema || typeof outputSchema !== "object") {
+    return { ok: true, notes: [] };
+  }
+  const notes = [];
+  for (const key of Object.keys(outputSchema)) {
+    if (!(key in parsed)) {
+      notes.push(`missing field: ${key}`);
+    }
+  }
+  return {
+    ok: notes.length === 0,
+    notes
+  };
+}
+
 export function shouldCommitWorktree(executionMode, artifacts) {
   if (executionMode !== "worktree") {
     return false;
@@ -110,4 +126,17 @@ export function isTaskSuccessful(run, tests, parsedJsonOk = false) {
   }
 
   return true;
+}
+
+export function isStructuredTaskSuccessful(run, tests, parsedJsonOk = false, outputSchema, parsedValue = null) {
+  if (!isTaskSuccessful(run, tests, parsedJsonOk)) {
+    return false;
+  }
+  if (!outputSchema) {
+    return true;
+  }
+  if (!parsedJsonOk || !parsedValue || typeof parsedValue !== "object") {
+    return false;
+  }
+  return validateOutputShape(parsedValue, outputSchema).ok;
 }

@@ -8,7 +8,9 @@ import {
   scoreRunStatus,
   normalizeStructuredStdout,
   shouldCommitWorktree,
-  isTaskSuccessful
+  isTaskSuccessful,
+  validateOutputShape,
+  isStructuredTaskSuccessful
 } from "../lib/result-utils.js";
 
 test("extractJsonObject parses direct JSON output", () => {
@@ -100,4 +102,37 @@ test("detectEvidenceConflicts flags mismatch between parsed failures and passing
   assert.deepEqual(conflicts, [
     "parsed output reports failures but router-owned tests passed"
   ]);
+});
+
+test("validateOutputShape reports missing schema fields", () => {
+  const shape = validateOutputShape({ summary: "ok" }, {
+    summary: "string",
+    files_changed: "array"
+  });
+
+  assert.equal(shape.ok, false);
+  assert.deepEqual(shape.notes, ["missing field: files_changed"]);
+});
+
+test("isStructuredTaskSuccessful fails when structured output is invalid", () => {
+  const ok = isStructuredTaskSuccessful(
+    { code: 0, timed_out: false },
+    { attempted: false, exit_code: null, timed_out: false },
+    false,
+    { summary: "string" }
+  );
+
+  assert.equal(ok, false);
+});
+
+test("isStructuredTaskSuccessful fails when schema validation fails", () => {
+  const ok = isStructuredTaskSuccessful(
+    { code: 0, timed_out: false },
+    { attempted: false, exit_code: null, timed_out: false },
+    true,
+    { summary: "string", files_changed: "array" },
+    { summary: "ok" }
+  );
+
+  assert.equal(ok, false);
 });
