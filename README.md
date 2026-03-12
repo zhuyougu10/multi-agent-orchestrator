@@ -68,7 +68,7 @@ Use these slash-commands inside OpenCode:
 | Command | Description |
 |---------|-------------|
 | `/delegate` | Dispatch a task to Codex or Gemini via `dispatch_task` |
-| `/watch` | Monitor tasks with `watch_task_group_blocking` until they finish |
+| `/watch` | Monitor tasks with `watch_task_group` polling until they finish |
 | `/repair` | Retry a failed task via `retry_task` |
 | `/merge` | Merge a result via `prepare_merge` + `merge_winner` |
 
@@ -90,8 +90,8 @@ Use these slash-commands inside OpenCode:
 
 | Mode | Behavior |
 |------|----------|
-| `single` | One agent only (default) |
-| `fallback` | Try primary agent; switch to secondary on failure |
+| `single` | One agent only |
+| `fallback` | Try primary agent; switch to secondary on failure (default) |
 | `race` | Dispatch to both agents in parallel; take the winner |
 
 ---

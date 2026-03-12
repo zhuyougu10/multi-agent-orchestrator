@@ -88,6 +88,20 @@ export function renderTaskPanel(state) {
   return lines.join("\n");
 }
 
+export async function updateTaskPanelState(state, waitForTask) {
+  await Promise.all(state.tasks.map(async (task) => {
+    const payload = await waitForTask(task);
+    applyTaskEvents(state, task.task_id, task.agent, payload.events);
+  }));
+
+  return {
+    tasks: state.tasks,
+    summary: summarizeTaskPanel(state),
+    all_terminal: allTasksTerminal(state),
+    panel_text: renderTaskPanel(state)
+  };
+}
+
 export async function collectPanelSnapshotsUntilTerminal(tasks, watcher, waitMs, options = {}) {
   const { maxRounds = 120, globalTimeoutMs = 0 } = options;
   let currentTasks = tasks.map((task) => ({ ...task }));

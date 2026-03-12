@@ -18,6 +18,8 @@
     "task-router__dispatch_task": "allow",
     "task-router__collect_result": "allow",
     "task-router__subscribe_task_events": "allow",
+    "task-router__watch_task_group": "allow",
+    "task-router__watch_task_group_blocking": "allow",
     "task-router__score_result": "allow",
     "task-router__retry_task": "allow",
     "task-router__list_jobs": "allow",

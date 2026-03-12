@@ -17,8 +17,8 @@ Override toward **gemini** for frontend/UI/UX-heavy work; override toward **code
 
 ## Execution modes
 
-- `single` — one agent only (default)
-- `fallback` — try primary agent first, switch to secondary on failure
+- `single` — one agent only
+- `fallback` — try primary agent first, switch to secondary on failure (default)
 - `race` — dispatch to both agents in parallel, take the winner
 
 ## Steps
@@ -32,7 +32,7 @@ Override toward **gemini** for frontend/UI/UX-heavy work; override toward **code
    - `prompt` — detailed, actionable instructions
    - `preferred_agent` — `codex` or `gemini`
    - `mode` — `single`, `fallback`, or `race`
-   - `files_scope` *(optional)* — glob patterns for relevant files
+   - `files_scope` *(optional)* — relative paths or glob patterns for relevant files
    - `test_command` *(optional)* — command to run tests after execution
 4. Return immediately. Do not block.
 5. Tell the user the `task_id` and remind them to run `/watch` to monitor progress.

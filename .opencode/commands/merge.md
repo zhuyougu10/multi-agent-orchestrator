@@ -13,8 +13,8 @@ Merge an approved task result by calling `task-router.prepare_merge` then `task-
 2. Call `task-router.prepare_merge` with `task_id`, `agent`, and `strategy` to preview the changes.
    - Review `diff_stat` for scope.
    - For `cherry-pick`, verify the commit SHA; for `patch`, verify the patch files.
-3. If the preview looks correct, call `task-router.merge_winner` with the same parameters to apply the merge.
-4. If the merge fails, call `task-router.abort_merge` with `task_id` and `agent`, then advise the user to run `/repair`.
+3. If the preview looks correct, call `task-router.merge_winner` with `cwd`, `task_id`, `agent`, and `strategy` to apply the merge.
+4. If the merge fails during cherry-pick, call `task-router.abort_merge` with `cwd`, then advise the user to run `/repair`.
 
 ## Strategy guide
 

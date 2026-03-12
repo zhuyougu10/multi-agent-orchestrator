@@ -28,9 +28,14 @@ import {
   validateOutputShape
 } from "./lib/result-utils.js";
 import { sanitizeTaskId } from "./lib/validation.js";
+import { AGENT_SCHEMA, OPTIONAL_AGENT_SCHEMA, PREFERRED_AGENT_SCHEMA, chooseAgent } from "./lib/agents.js";
+import { assertTaskNotActive } from "./lib/job-state.js";
 import { createTaskEventHub } from "./lib/task-events.js";
-import { selectCollectedPayload } from "./lib/result-collection.js";
-import { applyTaskEvents, collectPanelSnapshotsUntilTerminal, createTaskPanelState, allTasksTerminal, renderTaskPanel, summarizeTaskPanel } from "./lib/task-panel.js";
+import { matchesFilesScope } from "./lib/files-scope.js";
+import { buildCherryPickMergePayload, buildPatchMergePayload, buildPrepareMergePayload } from "./lib/merge-flow.js";
+import { resolveCollectedAgent, selectCollectedPayload } from "./lib/result-collection.js";
+import { buildPatchCommandArgs } from "./lib/merge-utils.js";
+import { applyTaskEvents, collectPanelSnapshotsUntilTerminal, createTaskPanelState, allTasksTerminal, renderTaskPanel, summarizeTaskPanel, updateTaskPanelState } from "./lib/task-panel.js";
 
 ensureDirs();
 
@@ -75,15 +80,6 @@ function storedTerminalEvents(taskId, agent) {
   }
 
   return events;
-}
-
-function chooseAgent(taskType, preferredAgent) {
-  if (preferredAgent && preferredAgent !== "auto") return preferredAgent;
-  const codexTypes = ["implementation", "refactor", "tests", "bugfix", "script"];
-  const geminiTypes = ["docs", "summarization", "comparison", "ux-copy"];
-  if (codexTypes.includes(taskType)) return "codex";
-  if (geminiTypes.includes(taskType)) return "gemini";
-  return "codex";
 }
 
 function alternateAgent(agent) {
@@ -188,7 +184,7 @@ function scopeSignals(filesScope, diffNames = []) {
   if (!Array.isArray(filesScope) || filesScope.length === 0) {
     return { ok: true, out_of_scope_files: [] };
   }
-  const out = diffNames.filter((file) => !filesScope.some((prefix) => file.startsWith(prefix)));
+  const out = diffNames.filter((file) => !matchesFilesScope(filesScope, file));
   return {
     ok: out.length === 0,
     out_of_scope_files: out
@@ -241,11 +237,11 @@ function computeScore({ result, outputSchema, filesScope }) {
   };
 }
 
-async function makePatch(wtPath, taskId, agent) {
+async function makePatch(wtPath, taskId, agent, result = null) {
   const outDir = patchDir(taskId, agent);
   fs.mkdirSync(outDir, { recursive: true });
   const patchFile = path.join(outDir, `${taskId}.${agent}.patch`);
-  const diff = await execCmd("git", ["diff", "--binary"], wtPath, {}, { shell: true });
+  const diff = await execCmd("git", buildPatchCommandArgs(result), wtPath, {}, { shell: true });
   fs.writeFileSync(patchFile, diff.stdout, "utf8");
   return {
     ok: diff.code === 0 && !diff.timed_out,
@@ -585,7 +581,7 @@ server.tool(
     prompt: z.string(),
     files_scope: z.array(z.string()).default([]),
     constraints: z.array(z.string()).default([]),
-    preferred_agent: z.string().default("auto"),
+    preferred_agent: PREFERRED_AGENT_SCHEMA,
     mode: z.enum(["single", "fallback", "race"]).default("fallback"),
     test_command: z.string().default(""),
     output_schema: z.record(z.string()).optional(),
@@ -593,6 +589,8 @@ server.tool(
   },
   async ({ task_id, task_type, cwd, prompt, files_scope, constraints, preferred_agent, mode, test_command, output_schema, timeout_ms }) => {
     const safeTaskId = sanitizeTaskId(task_id);
+    const existingIndex = exists(resultFile(safeTaskId)) ? readJson(resultFile(safeTaskId)) : null;
+    assertTaskNotActive(safeTaskId, existingIndex);
     const chosen = chooseAgent(task_type, preferred_agent);
     const job = {
       task_id: safeTaskId,
@@ -634,20 +632,24 @@ server.tool(
 
 server.tool(
   "collect_result",
-  { task_id: z.string(), agent: z.string().optional() },
+  { task_id: z.string(), agent: OPTIONAL_AGENT_SCHEMA },
   async ({ task_id, agent }) => {
     const safeTaskId = sanitizeTaskId(task_id);
-    const bundlePath = agent ? bundleFile(safeTaskId, agent) : null;
-    const resultPath = agent ? resultFile(safeTaskId, agent) : resultFile(safeTaskId);
+    const indexPath = resultFile(safeTaskId);
+    const indexData = exists(indexPath) ? readJson(indexPath) : null;
+    const selectedAgent = resolveCollectedAgent(agent, indexData);
+    const bundlePath = selectedAgent ? bundleFile(safeTaskId, selectedAgent) : null;
+    const resultPath = selectedAgent ? resultFile(safeTaskId, selectedAgent) : null;
     const selected = selectCollectedPayload(
       bundlePath && exists(bundlePath) ? readJson(bundlePath) : null,
-      exists(resultPath) ? readJson(resultPath) : null
+      resultPath && exists(resultPath) ? readJson(resultPath) : null,
+      agent ? null : indexData
     );
     if (!selected) {
       return {
         content: [{
           type: "text",
-          text: JSON.stringify({ ok: false, error: "result not found", task_id: safeTaskId, agent }, null, 2)
+          text: JSON.stringify({ ok: false, error: "result not found", task_id: safeTaskId, agent: selectedAgent || agent }, null, 2)
         }]
       };
     }
@@ -659,7 +661,7 @@ server.tool(
   "subscribe_task_events",
   {
     task_id: z.string(),
-    agent: z.string().optional(),
+    agent: OPTIONAL_AGENT_SCHEMA,
     cursor: z.number().int().min(0).default(0),
     wait_ms: z.number().int().min(0).max(30000).default(5500)
   },
@@ -713,7 +715,7 @@ server.tool(
   {
     tasks: z.array(z.object({
       task_id: z.string(),
-      agent: z.string().optional(),
+      agent: OPTIONAL_AGENT_SCHEMA,
       cursor: z.number().int().min(0).default(0)
     })),
     wait_ms: z.number().int().min(0).max(30000).default(5500)
@@ -724,8 +726,7 @@ server.tool(
       agent: task.agent ?? null,
       cursor: task.cursor ?? 0
     })));
-
-    for (const task of state.tasks) {
+    const panel = await updateTaskPanelState(state, async (task) => {
       const payload = await taskEventHub.waitForEvents(task.task_id, task.agent, {
         cursor: task.cursor,
         timeoutMs: wait_ms
@@ -737,23 +738,17 @@ server.tool(
           cursor: task.cursor + index + 1
         }));
         if (fallbackEvents.length > 0) {
-          applyTaskEvents(state, task.task_id, task.agent, fallbackEvents);
-          continue;
+          return { events: fallbackEvents };
         }
       }
 
-      applyTaskEvents(state, task.task_id, task.agent, payload.events);
-    }
+      return { events: payload.events };
+    });
 
     return {
       content: [{
         type: "text",
-        text: JSON.stringify({
-          tasks: state.tasks,
-          summary: summarizeTaskPanel(state),
-          all_terminal: allTasksTerminal(state),
-          panel_text: renderTaskPanel(state)
-        }, null, 2)
+        text: JSON.stringify(panel, null, 2)
       }]
     };
   }
@@ -764,7 +759,7 @@ server.tool(
   {
     tasks: z.array(z.object({
       task_id: z.string(),
-      agent: z.string().optional(),
+      agent: OPTIONAL_AGENT_SCHEMA,
       cursor: z.number().int().min(0).default(0)
     })),
     wait_ms: z.number().int().min(0).max(30000).default(5500)
@@ -783,7 +778,7 @@ server.tool(
           cursor: task.cursor ?? 0
         })));
 
-        return Promise.all(state.tasks.map(async (task) => {
+        return updateTaskPanelState(state, async (task) => {
           const payload = await taskEventHub.waitForEvents(task.task_id, task.agent, {
             cursor: task.cursor,
             timeoutMs: waitMs
@@ -795,18 +790,12 @@ server.tool(
               cursor: task.cursor + index + 1
             }));
             if (fallbackEvents.length > 0) {
-              applyTaskEvents(state, task.task_id, task.agent, fallbackEvents);
-              return;
+              return { events: fallbackEvents };
             }
           }
 
-          applyTaskEvents(state, task.task_id, task.agent, payload.events);
-        })).then(() => ({
-          tasks: state.tasks,
-          summary: summarizeTaskPanel(state),
-          all_terminal: allTasksTerminal(state),
-          panel_text: renderTaskPanel(state)
-        }));
+          return { events: payload.events };
+        });
       },
       wait_ms
     );
@@ -824,7 +813,7 @@ server.tool(
   "score_result",
   {
     task_id: z.string(),
-    agent: z.string(),
+    agent: AGENT_SCHEMA,
     output_schema: z.record(z.string()).optional(),
     files_scope: z.array(z.string()).default([])
   },
@@ -862,7 +851,7 @@ server.tool(
 
 server.tool(
   "retry_task",
-  { task_id: z.string(), issue: z.string(), preferred_agent: z.string().default("auto") },
+  { task_id: z.string(), issue: z.string(), preferred_agent: PREFERRED_AGENT_SCHEMA },
   async ({ task_id, issue, preferred_agent }) => {
     const safeTaskId = sanitizeTaskId(task_id);
     const jf = jobFile(safeTaskId);
@@ -875,6 +864,8 @@ server.tool(
       };
     }
     const job = readJson(jf);
+    const existingIndex = exists(resultFile(safeTaskId)) ? readJson(resultFile(safeTaskId)) : null;
+    assertTaskNotActive(safeTaskId, existingIndex);
     const agent = chooseAgent(job.task_type, preferred_agent);
     const retryPrompt =
       `${job.prompt}\n\nRepair instructions:\n${issue}\n\nReturn valid JSON only and stay within declared scope.`;
@@ -912,7 +903,7 @@ server.tool(
   "prepare_merge",
   {
     task_id: z.string(),
-    agent: z.string(),
+    agent: AGENT_SCHEMA,
     strategy: z.enum(["patch", "cherry-pick"]).default("patch")
   },
   async ({ task_id, agent, strategy }) => {
@@ -933,23 +924,15 @@ server.tool(
         return {
           content: [{
             type: "text",
-            text: JSON.stringify({ ok: false, error: "worktree path missing", task_id: safeTaskId, agent }, null, 2)
+            text: JSON.stringify(buildPrepareMergePayload({ taskId: safeTaskId, agent, strategy, bundle }), null, 2)
           }]
         };
       }
-      const patch = await makePatch(bundle.result.worktree_path, safeTaskId, agent);
+      const patch = await makePatch(bundle.result.worktree_path, safeTaskId, agent, bundle.result);
       return {
         content: [{
           type: "text",
-          text: JSON.stringify({
-            ok: patch.ok,
-            task_id: safeTaskId,
-            agent,
-            strategy,
-            patch_file: patch.patch_file,
-            stdout: patch.stdout,
-            stderr: patch.stderr
-          }, null, 2)
+          text: JSON.stringify(buildPrepareMergePayload({ taskId: safeTaskId, agent, strategy, bundle, patch }), null, 2)
         }]
       };
     }
@@ -957,13 +940,7 @@ server.tool(
     return {
       content: [{
         type: "text",
-        text: JSON.stringify({
-          ok: true,
-          task_id: safeTaskId,
-          agent,
-          strategy,
-          commit_sha: bundle?.result?.commit?.head_sha || ""
-        }, null, 2)
+        text: JSON.stringify(buildPrepareMergePayload({ taskId: safeTaskId, agent, strategy, bundle }), null, 2)
       }]
     };
   }
@@ -974,7 +951,7 @@ server.tool(
   {
     cwd: z.string(),
     task_id: z.string(),
-    agent: z.string(),
+    agent: AGENT_SCHEMA,
     strategy: z.enum(["patch", "cherry-pick"]).default("patch")
   },
   async ({ cwd, task_id, agent, strategy }) => {
@@ -996,7 +973,7 @@ server.tool(
         return {
           content: [{
             type: "text",
-            text: JSON.stringify({ ok: false, error: "missing commit sha", task_id: safeTaskId, agent }, null, 2)
+            text: JSON.stringify(buildCherryPickMergePayload({ taskId: safeTaskId, agent, bundle }), null, 2)
           }]
         };
       }
@@ -1004,58 +981,21 @@ server.tool(
       return {
         content: [{
           type: "text",
-          text: JSON.stringify({
-            ok: picked.code === 0 && !picked.timed_out,
-            strategy,
-            task_id: safeTaskId,
-            agent,
-            commit_sha: sha,
-            timed_out: picked.timed_out,
-            stdout: picked.stdout,
-            stderr: picked.stderr
-          }, null, 2)
+          text: JSON.stringify(buildCherryPickMergePayload({ taskId: safeTaskId, agent, bundle, picked }), null, 2)
         }]
       };
     }
 
-    const prep = await makePatch(bundle.result.worktree_path, safeTaskId, agent);
+    const prep = await makePatch(bundle.result.worktree_path, safeTaskId, agent, bundle.result);
     const firstPatch = prep.patch_file;
 
     const check = await applyPatchCheck(cwd, firstPatch);
     if (check.code !== 0) {
       const apply3 = await applyPatchThreeWay(cwd, firstPatch);
-      if (apply3.code === 0) {
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              ok: true,
-              strategy,
-              task_id: safeTaskId,
-              agent,
-              patch_file: firstPatch,
-              mode: "three-way-fallback",
-              stdout: apply3.stdout,
-              stderr: apply3.stderr,
-              initial_apply_check_stderr: check.stderr
-            }, null, 2)
-          }]
-        };
-      }
       return {
         content: [{
           type: "text",
-          text: JSON.stringify({
-            ok: false,
-            strategy,
-            task_id: safeTaskId,
-            agent,
-            stage: "apply-check",
-            stdout: check.stdout,
-            stderr: check.stderr,
-            fallback_stdout: apply3.stdout,
-            fallback_stderr: apply3.stderr
-          }, null, 2)
+          text: JSON.stringify(buildPatchMergePayload({ taskId: safeTaskId, agent, patchFile: firstPatch, check, apply3 }), null, 2)
         }]
       };
     }
@@ -1064,16 +1004,7 @@ server.tool(
     return {
       content: [{
         type: "text",
-        text: JSON.stringify({
-          ok: apply.code === 0 && !apply.timed_out,
-          strategy,
-          task_id: safeTaskId,
-          agent,
-          patch_file: firstPatch,
-          timed_out: apply.timed_out,
-          stdout: apply.stdout,
-          stderr: apply.stderr
-        }, null, 2)
+        text: JSON.stringify(buildPatchMergePayload({ taskId: safeTaskId, agent, patchFile: firstPatch, check, apply }), null, 2)
       }]
     };
   }

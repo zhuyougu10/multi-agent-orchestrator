@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   createTaskPanelState,
+  updateTaskPanelState,
   applyTaskEvents,
   allTasksTerminal,
   renderTaskPanel
@@ -104,4 +105,39 @@ test("renderTaskPanel prints summary counts and task rows", () => {
   assert.match(panel, /Tasks: 2 total \| running: 1 \| completed: 0 \| failed: 1/);
   assert.match(panel, /task-e \| codex \| running/);
   assert.match(panel, /task-f \| gemini \| failed/);
+});
+
+test("updateTaskPanelState waits for task events in parallel", async () => {
+  const state = createTaskPanelState([
+    { task_id: "task-a", agent: "codex", cursor: 0 },
+    { task_id: "task-b", agent: "gemini", cursor: 0 }
+  ]);
+  const started = [];
+  const release = [];
+
+  const waitForTask = ({ task_id }) => new Promise((resolve) => {
+    started.push(task_id);
+    release.push(() => resolve({
+      events: [{
+        cursor: 1,
+        event: {
+          task_id,
+          event_type: "completed",
+          timestamp: `ts-${task_id}`
+        }
+      }]
+    }));
+  });
+
+  const pending = updateTaskPanelState(state, waitForTask);
+
+  await Promise.resolve();
+
+  assert.deepEqual(started.sort(), ["task-a", "task-b"]);
+
+  release.splice(0).forEach((resolve) => resolve());
+  await pending;
+
+  assert.equal(state.tasks[0].status, "completed");
+  assert.equal(state.tasks[1].status, "completed");
 });

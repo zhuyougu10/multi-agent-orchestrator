@@ -57,3 +57,19 @@ test("syncScopedFilesIntoExecutionPath copies scoped root files into worktree", 
   assert.equal(fs.readFileSync(path.join(execRoot, "task_plan.md"), "utf8"), "plan\n");
   assert.equal(fs.readFileSync(path.join(execRoot, "notes", "finding.txt"), "utf8"), "finding\n");
 });
+
+test("syncScopedFilesIntoExecutionPath copies files matched by glob scope", () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "task-router-sync-glob-src-"));
+  const execRoot = fs.mkdtempSync(path.join(os.tmpdir(), "task-router-sync-glob-dst-"));
+
+  fs.mkdirSync(path.join(repoRoot, "src", "lib"), { recursive: true });
+  fs.writeFileSync(path.join(repoRoot, "src", "index.js"), "index\n", "utf8");
+  fs.writeFileSync(path.join(repoRoot, "src", "lib", "util.js"), "util\n", "utf8");
+  fs.writeFileSync(path.join(repoRoot, "src", "lib", "util.ts"), "ts\n", "utf8");
+
+  syncScopedFilesIntoExecutionPath(repoRoot, execRoot, ["src/**/*.js"]);
+
+  assert.equal(fs.readFileSync(path.join(execRoot, "src", "index.js"), "utf8"), "index\n");
+  assert.equal(fs.readFileSync(path.join(execRoot, "src", "lib", "util.js"), "utf8"), "util\n");
+  assert.equal(fs.existsSync(path.join(execRoot, "src", "lib", "util.ts")), false);
+});
