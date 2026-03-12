@@ -1,6 +1,6 @@
 # Planning Workflow
 
-Use this workflow for any task that needs more than a few direct edits.
+Use this workflow for any task that needs more than a few direct edits or persistent task tracking.
 
 ## Persistent Planning Files
 
@@ -25,15 +25,10 @@ Maintain these files in the repository root:
 - Separate frontend-heavy and backend-heavy work when possible.
 - Prefer one clear purpose per task.
 
-## Implementation Plan Expectations
+## Handoff To Later Workflows
 
-When the design is approved, produce an implementation plan that includes:
-
-- exact files to create or modify
-- the reason each file changes
-- verification commands to run
-- expected outputs or pass conditions
-- ordering constraints between tasks
+- Use `implementation-plans.md` after the design is approved and the next step is turning it into executable file-level work.
+- Use `execute-plan.md` once the implementation plan is approved and execution begins.
 
 ## Error Logging
 

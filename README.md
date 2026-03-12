@@ -223,7 +223,7 @@ npm install
 
 #### 4. 配置 OpenCode
 
-确保 `.opencode/opencode.json` 配置正确。项目现在内置了仓库级 workflow 文档，不再依赖外部 `superpowers`：
+确保 `.opencode/opencode.json` 配置正确。项目现在内置了仓库级 workflow 文档：
 
 ```json
 {
@@ -249,28 +249,25 @@ npm install
 使用 orchestrator agent 执行任务
 ```
 
-仓库自带的流程规范位于 `.opencode/workflows/`，其中定义了 intake、brainstorm、plan、verify、finish 和 delegation-rules 六个本地 workflow。若要恢复之前任务的上下文，先使用 `/resume` 读取规划记忆，再决定是否继续编排。
+仓库自带的流程规范位于 `.opencode/workflows/`，当前覆盖 `intake.md`、`brainstorm.md`、`plan.md`、`implementation-plans.md`、`execute-plan.md`、`verify.md`、`finish.md` 和 `delegation-rules.md`。若要恢复之前任务的上下文，先使用 `/resume` 读取规划记忆，再决定是否继续编排。
 
 ### 工作流程
 
+图例：带 `/` 前缀的是用户命令；带 `.md` 后缀的是 orchestrator 在对应阶段参考的 workflow 文档，不是单独命令。
+
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  /resume    │ ──▶ │ /orchestrate│ ──▶ │  /delegate  │
-│  恢复记忆    │     │  分析任务    │     │  分发任务    │
-└─────────────┘     └─────────────┘     └─────────────┘
-                                                    │
-                                                    ▼
-                                         ┌─────────────┐
-                                         │   /watch    │
-                                         │  监控面板   │
-                                         └─────────────┘
-                                              │
-                                              ▼
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  /finalize  │ ◀── │   /merge    │ ◀── │   /review   │
-│  清理完成    │     │  合并结果    │     │  审核结果   │
-└─────────────┘     └─────────────┘     └─────────────┘
+[ /resume ] -> [ /orchestrate ] -> [workflow: implementation-plans.md]
+                                        |
+                                        v
+                          [workflow: execute-plan.md]
+                                        |
+                         +--------------+--------------+
+                         |                             |
+                         v                             v
+                    [ /delegate ] -> [ /watch ] -> [ /review ] -> [ /merge ] -> [ /finalize ]
 ```
+
+说明：`implementation-plans.md` 和 `execute-plan.md` 目前是仓库 workflow 文档，不是新的命令入口；现有命令在对应阶段引用它们。
 
 ### 命令详解
 
@@ -297,7 +294,7 @@ npm install
 
 #### `/orchestrate` - 任务分析
 
-分析需求，创建任务计划文件。
+分析需求，创建任务计划文件，并确定当前应进入的 workflow 阶段。
 
 ```
 /orchestrate
@@ -308,9 +305,14 @@ npm install
 - `findings.md` - 调研发现
 - `progress.md` - 执行进度
 
+典型阶段输出：
+- 需要设计澄清时，orchestrator 参考 `brainstorm.md`
+- 设计已批准时，orchestrator 参考 `implementation-plans.md` 形成详细执行计划
+- 进入执行阶段时，orchestrator 参考 `execute-plan.md` 并按需调用 `/delegate`
+
 #### `/delegate` - 任务分发
 
-根据任务类型自动路由到 Codex 或 Gemini。
+根据任务类型自动路由到 Codex 或 Gemini。通常应基于已经批准的 implementation plan 进行分发，而不是仅基于高层需求。
 
 ```
 /delegate
@@ -383,10 +385,11 @@ task-b | codex  | completed | 2026-03-12T12:00:08Z | completed
 ```
 使用 orchestrator agent 实现用户认证功能：
 1. 如需恢复上下文，先调用 /resume
-2. 调用 /orchestrate 分析需求
-3. 调用 /delegate 分发任务
-4. 调用 /watch 等待完成
-5. 完成后执行 /review、/merge、/finalize
+2. 调用 /orchestrate 完成 intake、规划并确认设计
+3. 如果任务进入详细实施阶段，orchestrator 参考 `implementation-plans.md` 形成执行计划
+4. 执行阶段由 orchestrator 参考 `execute-plan.md`，必要时调用 /delegate
+5. 调用 /watch 等待完成
+6. 完成后执行 /review、/merge、/finalize
 ```
 
 #### 示例 2：编写文档
@@ -395,11 +398,12 @@ task-b | codex  | completed | 2026-03-12T12:00:08Z | completed
 使用 orchestrator agent 编写 API 文档：
 1. 若这是上次未完成的任务，先执行 /resume
 2. /orchestrate
-3. /delegate（自动路由到 Gemini）
-4. /watch
-5. /review
-6. /merge（使用 patch 策略）
-7. /finalize
+3. 如需多步执行，orchestrator 参考 `implementation-plans.md` 明确文件和校验方式
+4. 进入执行阶段后，orchestrator 参考 `execute-plan.md`，再 /delegate（自动路由到 Gemini）
+5. /watch
+6. /review
+7. /merge（使用 patch 策略）
+8. /finalize
 ```
 
 ---
@@ -424,6 +428,8 @@ multi-agent-orchestrator/
 │   │   ├── intake.md
 │   │   ├── brainstorm.md
 │   │   ├── plan.md
+│   │   ├── implementation-plans.md
+│   │   ├── execute-plan.md
 │   │   ├── verify.md
 │   │   ├── finish.md
 │   │   └── delegation-rules.md

@@ -23,3 +23,5 @@ Use this workflow when approved work has been merged or is ready for closure.
 ## Completion Standard
 
 The task is not fully finished until verification, cleanup, and planning-file updates are all done.
+
+This workflow is for closure only. Planning, implementation-plan authoring, and execution discipline belong in earlier workflow documents.

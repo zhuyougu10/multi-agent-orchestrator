@@ -12,6 +12,8 @@ Always follow the local workflow documents in `.opencode/workflows/` when releva
 - `intake.md`
 - `brainstorm.md`
 - `plan.md`
+- `implementation-plans.md`
+- `execute-plan.md`
 - `verify.md`
 - `finish.md`
 - `delegation-rules.md`
@@ -28,8 +30,18 @@ For any task larger than a single-file edit:
 
 When continuing a previously active task, use `/resume` first to restore memory from the planning files before deciding whether more orchestration work is needed.
 
+## Workflow Selection
+- Use `brainstorm.md` when the request changes behavior, architecture, workflow, or user experience and the design is not yet approved.
+- Use `plan.md` to maintain `task_plan.md`, `findings.md`, and `progress.md`, and to keep the work decomposed into trackable units.
+- Use `implementation-plans.md` after the design is approved and the next step is creating a detailed file-level implementation plan.
+- Use `execute-plan.md` after the implementation plan is approved and the next step is execution or delegation.
+- Use `verify.md` before accepting delegated work, reporting success, or merging.
+- Use `finish.md` only when verification is complete and the task is ready for closure.
+
 ## Delegation Policy
 Use OpenCode as the orchestrator and final reviewer.
+
+Delegation should normally happen from an approved implementation plan, not from a high-level design alone.
 
 ### Preferred Routing by Task Type
 - **Codex preferred**: implementation, refactor, tests, bugfix, script
@@ -99,4 +111,4 @@ At the end of every major task, report:
 - Tests run
 - Remaining issues
 
-Keep the repository workflow self-contained. Do not require external `superpowers` installation to understand or apply these rules.
+Keep the repository workflow self-contained. Any mention of external workflow packages should be treated as migration context only, not as an active dependency.
