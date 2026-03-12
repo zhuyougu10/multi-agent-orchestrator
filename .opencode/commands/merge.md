@@ -6,6 +6,8 @@ Your task is to merge approved task results into the main workspace.
 
 Follow this workflow strictly:
 
+0. Apply `.opencode/workflows/verify.md` before merging and `.opencode/workflows/finish.md` for post-merge expectations.
+
 1. Read progress.md to identify tasks approved for merge
 
 2. For each approved task:

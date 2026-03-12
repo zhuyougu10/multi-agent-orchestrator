@@ -6,15 +6,17 @@ Your task is to analyze the current request and create a comprehensive task plan
 
 Follow this workflow strictly:
 
-1. Read and apply the mandatory skills:
-   - using-superpowers
-   - planning-with-files
+1. Read and apply the local repository workflows:
+   - `.opencode/workflows/intake.md`
+   - `.opencode/workflows/plan.md`
+   - `.opencode/workflows/delegation-rules.md`
 
 2. Analyze the request:
-   - Understand the goal
-   - Identify constraints
-   - Assess complexity
-   - Determine affected areas
+    - Understand the goal
+    - Identify constraints
+    - Assess complexity
+    - Determine affected areas
+    - Decide whether design-first work from `.opencode/workflows/brainstorm.md` is required before implementation
 
 3. Create or update planning files:
    - task_plan.md: Task breakdown with dependencies

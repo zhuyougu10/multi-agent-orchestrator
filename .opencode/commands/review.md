@@ -6,8 +6,10 @@ Your task is to review all delegated task results and make decisions.
 
 Follow this workflow strictly:
 
+0. Apply `.opencode/workflows/verify.md` before making any approval decision.
+
 1. Read progress.md to identify completed tasks
-   - Assume `/watch` has already blocked until every relevant dispatched task is terminal
+    - Assume `/watch` has already blocked until every relevant dispatched task is terminal
    - Do not start `/review` for tasks that are still running
 
 2. For each completed task:

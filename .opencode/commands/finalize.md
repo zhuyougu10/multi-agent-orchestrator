@@ -6,9 +6,11 @@ Your task is to finalize the completed work and clean up resources.
 
 Follow this workflow strictly:
 
+0. Apply `.opencode/workflows/finish.md` and use it as the completion checklist.
+
 1. Verify main workspace:
-   - Confirm all approved changes are merged
-   - Check working directory is clean
+    - Confirm all approved changes are merged
+    - Check working directory is clean
    - Verify no orphaned changes
 
 2. Run final validation:

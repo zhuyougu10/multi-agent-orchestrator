@@ -6,6 +6,8 @@ Your task is to load the currently active dispatched tasks and call the blocking
 
 Follow this workflow strictly:
 
+0. Treat `.opencode/workflows/delegation-rules.md` as the canonical source for task identity and grouping expectations recorded during `/delegate`.
+
 1. Read progress.md to identify active dispatched tasks:
    - tasks launched by `/delegate`
    - tasks not yet marked `completed` or `failed`

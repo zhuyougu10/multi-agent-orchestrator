@@ -223,14 +223,10 @@ npm install
 
 #### 4. 配置 OpenCode
 
-确保 `.opencode/opencode.json` 配置正确：
+确保 `.opencode/opencode.json` 配置正确。项目现在内置了仓库级 workflow 文档，不再依赖外部 `superpowers`：
 
 ```json
 {
-  "skills": {
-    "superpowers": { "enabled": true },
-    "planning-with-files": { "enabled": true }
-  },
   "mcp": {
     "task-router": {
       "type": "local",
@@ -252,6 +248,8 @@ npm install
 ```
 使用 orchestrator agent 执行任务
 ```
+
+仓库自带的流程规范位于 `.opencode/workflows/`，其中定义了 intake、brainstorm、plan、verify、finish 和 delegation-rules 六个本地 workflow。
 
 ### 工作流程
 
@@ -392,8 +390,13 @@ multi-agent-orchestrator/
 │   │   ├── repair.md
 │   │   ├── merge.md
 │   │   └── finalize.md
-│   ├── skills/
-│   │   └── planning-with-files/  # 规划技能
+│   ├── workflows/                # 仓库内置 workflow 文档
+│   │   ├── intake.md
+│   │   ├── brainstorm.md
+│   │   ├── plan.md
+│   │   ├── verify.md
+│   │   ├── finish.md
+│   │   └── delegation-rules.md
 │   └── opencode.json             # OpenCode 主配置
 ├── .codex/                       # Codex 专用配置
 │   └── skills/
@@ -545,14 +548,6 @@ multi-agent-orchestrator/
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "skills": {
-    "superpowers": {
-      "enabled": true
-    },
-    "planning-with-files": {
-      "enabled": true
-    }
-  },
   "mcp": {
     "task-router": {
       "type": "local",
@@ -591,18 +586,16 @@ multi-agent-orchestrator/
 
 ## 故障排查
 
-### OpenCode 看不到 superpowers
+### 本地 workflow 未生效
 
-**检查符号链接：**
-
-```powershell
-Get-ChildItem "$env:USERPROFILE\.config\opencode\plugins" | Where-Object { $_.LinkType }
-Get-ChildItem "$env:USERPROFILE\.config\opencode\skills" | Where-Object { $_.LinkType }
-```
+**检查项：**
+- 确认使用的是 `orchestrator` agent
+- 确认 `.opencode/workflows/` 目录存在并包含 workflow 文档
+- 确认 `.opencode/opencode.json` 已启用本地 `task-router` MCP 配置
 
 **解决方案：**
-- 以管理员身份运行 PowerShell
-- 或开启 Windows Developer Mode
+- 重新拉取仓库或检查是否遗漏 `.opencode/workflows/`
+- 重启 OpenCode 以重新加载仓库配置
 
 ### Windows 无法创建符号链接
 

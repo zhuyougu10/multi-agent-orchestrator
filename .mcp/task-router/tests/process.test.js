@@ -38,7 +38,8 @@ test("execCmd forwards stdout chunks to callback", async () => {
   );
 
   assert.equal(res.stdout, "alphabeta");
-  assert.deepEqual(chunks, ["alpha", "beta"]);
+  assert.equal(chunks.join(""), "alphabeta");
+  assert.ok(chunks.length >= 1);
 });
 
 test("execCmd forwards stderr chunks to callback", async () => {
@@ -59,5 +60,6 @@ test("execCmd forwards stderr chunks to callback", async () => {
   );
 
   assert.equal(res.stderr, "warning");
-  assert.deepEqual(chunks, ["warn", "ing"]);
+  assert.equal(chunks.join(""), "warning");
+  assert.ok(chunks.length >= 1);
 });

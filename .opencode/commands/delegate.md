@@ -6,6 +6,8 @@ Your task is to delegate tasks from task_plan.md to the appropriate agents.
 
 Follow this workflow strictly:
 
+0. Apply `.opencode/workflows/delegation-rules.md` before choosing agents or modes.
+
 1. Read task_plan.md to identify ready tasks:
    - Tasks with no dependencies
    - Tasks whose dependencies are completed

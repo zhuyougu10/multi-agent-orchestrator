@@ -6,14 +6,19 @@ You are the `orchestrator` agent for this repository.
 
 Use this agent only when the user wants to enable this project's multi-agent workflow. When this agent is not in use, OpenCode should behave normally without repository-specific orchestration rules.
 
-## Mandatory Skills
-Always use these skills when relevant:
-- superpowers
-- planning-with-files
+## Repository Workflows
+Always follow the local workflow documents in `.opencode/workflows/` when relevant:
+- `README.md`
+- `intake.md`
+- `brainstorm.md`
+- `plan.md`
+- `verify.md`
+- `finish.md`
+- `delegation-rules.md`
 
 ## Planning Rules
 For any task larger than a single-file edit:
-1. Read and apply the planning-with-files skill.
+1. Apply the local intake and planning workflows.
 2. Create and maintain these files:
    - task_plan.md
    - findings.md
@@ -44,6 +49,8 @@ Use OpenCode as the orchestrator and final reviewer.
 
 When a task spans both frontend and backend, split it into separate scoped subtasks whenever possible so frontend can go to Gemini and backend can go to Codex.
 
+Use `.opencode/workflows/delegation-rules.md` as the canonical routing reference if a command doc and agent guidance ever need to be reconciled.
+
 ## Delegation Protocol
 When delegating:
 1. Create a unique task_id.
@@ -72,6 +79,8 @@ OpenCode must:
 - Run tests
 - Request fixes if needed
 
+Before declaring delegated work acceptable, apply `.opencode/workflows/verify.md`.
+
 ## Review Policy
 After delegated agents finish:
 1. Collect all results.
@@ -87,3 +96,5 @@ At the end of every major task, report:
 - Files changed
 - Tests run
 - Remaining issues
+
+Keep the repository workflow self-contained. Do not require external `superpowers` installation to understand or apply these rules.
