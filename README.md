@@ -41,6 +41,33 @@ node .mcp/task-router/server.js
 
 Then open OpenCode in this directory; the `task-router` MCP tools will be available automatically.
 
+### 启动本地 watcher 面板
+
+```bash
+cd .mcp/task-router
+npm run watch-ui -- watch-smoke-20260313
+```
+
+如果你是在 OpenCode 的 `/watch` 流程里使用，推荐等价命令就是：
+
+```bash
+node .mcp/task-router/watch-ui.js <task_id[:agent]> [...task_id[:agent]]
+```
+
+也可以直接运行：
+
+```bash
+node .mcp/task-router/watch-ui.js watch-smoke-20260313
+```
+
+多任务示例：
+
+```bash
+node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
+```
+
+watcher 会在当前终端中维护一个固定面板，并在同一块区域里显示多任务状态。
+
 ---
 
 ## MCP 工具速查
@@ -68,7 +95,7 @@ Use these slash-commands inside OpenCode:
 | Command | Description |
 |---------|-------------|
 | `/delegate` | Dispatch a task to Codex or Gemini via `dispatch_task` |
-| `/watch` | Monitor tasks with `watch_task_group` polling until they finish |
+| `/watch` | Run `watch-ui.js` in the current terminal and show a fixed multi-task panel |
 | `/repair` | Retry a failed task via `retry_task` |
 | `/merge` | Merge a result via `prepare_merge` + `merge_winner` |
 

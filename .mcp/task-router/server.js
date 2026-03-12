@@ -14,9 +14,10 @@ import {
   bundleFile,
   worktreePath,
   worktreeBranch,
-  patchDir
+  patchDir,
+  taskEventFile
 } from "./lib/paths.js";
-import { exists, readJson, writeJsonAtomic } from "./lib/storage.js";
+import { appendJsonLine, exists, readJson, safeUnlink, writeJsonAtomic } from "./lib/storage.js";
 import { execCmd } from "./lib/process.js";
 import {
   detectEvidenceConflicts,
@@ -47,13 +48,15 @@ function nowIso() {
 }
 
 function publishTaskEvent(taskId, agent, eventType, details = {}) {
-  taskEventHub.publish({
+  const event = {
     task_id: taskId,
     agent,
     event_type: eventType,
     timestamp: nowIso(),
     ...details
-  });
+  };
+  appendJsonLine(taskEventFile(taskId), event);
+  taskEventHub.publish(event);
 }
 
 function storedTerminalEvents(taskId, agent) {
@@ -1052,6 +1055,7 @@ server.tool(
         cleaned.push(await removeWorktree(job.cwd, safeTaskId, agent));
       }
     }
+    safeUnlink(taskEventFile(safeTaskId));
     return { content: [{ type: "text", text: JSON.stringify({ ok: true, task_id: safeTaskId, cleaned }, null, 2) }] };
   }
 );

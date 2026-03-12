@@ -14,6 +14,7 @@ export const SCORE_ROOT = path.join(WORK_ROOT, "scores");
 export const BUNDLE_ROOT = path.join(WORK_ROOT, "bundles");
 export const WT_ROOT = path.join(WORK_ROOT, "worktrees");
 export const PATCH_ROOT = path.join(WORK_ROOT, "patches");
+export const EVENT_ROOT = path.join(WORK_ROOT, "events");
 
 export function ensureDirs() {
   for (const dir of [
@@ -23,7 +24,8 @@ export function ensureDirs() {
     SCORE_ROOT,
     BUNDLE_ROOT,
     WT_ROOT,
-    PATCH_ROOT
+    PATCH_ROOT,
+    EVENT_ROOT
   ]) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -64,4 +66,9 @@ export function worktreePath(taskId, agent) {
 export function patchDir(taskId, agent) {
   const id = sanitizeTaskId(taskId);
   return path.join(PATCH_ROOT, `${id}-${agent}`);
+}
+
+export function taskEventFile(taskId) {
+  const id = sanitizeTaskId(taskId);
+  return path.join(EVENT_ROOT, `${id}.jsonl`);
 }

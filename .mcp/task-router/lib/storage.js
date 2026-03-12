@@ -18,6 +18,12 @@ export function writeJsonAtomic(file, data) {
   fs.renameSync(tmp, file);
 }
 
+export function appendJsonLine(file, data) {
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.appendFileSync(file, `${JSON.stringify(data)}\n`, "utf8");
+}
+
 export function safeUnlink(file) {
   try {
     fs.unlinkSync(file);
