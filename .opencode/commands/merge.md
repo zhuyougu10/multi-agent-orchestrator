@@ -1,54 +1,29 @@
 ---
-description: Merge the selected winning result back to main workspace
+description: Merge a task result back to the main workspace via MCP
 ---
 
-Your task is to merge approved task results into the main workspace.
+Merge an approved task result by calling `task-router.prepare_merge` then `task-router.merge_winner` directly. Do not read or write any planning files.
 
-Follow this repository-skill procedure strictly:
+## Steps
 
-0. Apply `.opencode/skills/verify/SKILL.md` before merging and `.opencode/skills/finish/SKILL.md` for post-merge expectations.
+1. Accept from the user:
+   - `task_id` — the task whose result should be merged
+   - `agent` — the winning agent (`codex` or `gemini`)
+   - `strategy` *(optional)* — `patch` or `cherry-pick` (default: `patch`)
+2. Call `task-router.prepare_merge` with `task_id`, `agent`, and `strategy` to preview the changes.
+   - Review `diff_stat` for scope.
+   - For `cherry-pick`, verify the commit SHA; for `patch`, verify the patch files.
+3. If the preview looks correct, call `task-router.merge_winner` with the same parameters to apply the merge.
+4. If the merge fails, call `task-router.abort_merge` with `task_id` and `agent`, then advise the user to run `/repair`.
 
-1. Read progress.md to identify tasks approved for merge
+## Strategy guide
 
-2. For each approved task:
-   a. Determine merge strategy:
-      - Docs, README, small edits: patch
-      - Code implementation, tests, refactor: cherry-pick
-      - High-risk, large changes: manual-review
+| Situation | Recommended strategy |
+|-----------|----------------------|
+| Docs, README, small text edits | `patch` |
+| Code implementation, tests, refactor | `cherry-pick` |
 
-   b. Prepare the merge:
-      - Call task-router.prepare_merge
-      - task_id: the approved task
-      - agent: the winning agent
-      - strategy: patch or cherry-pick
+## Constraints
 
-   c. Review merge preparation:
-      - Check diff_stat for scope
-      - Verify commit SHA (cherry-pick)
-      - Verify patch files (patch mode)
-
-   d. Execute the merge:
-      - Call task-router.merge_winner
-      - task_id: the approved task
-      - agent: the winning agent
-      - strategy: the selected strategy
-
-   e. Handle merge result:
-      - If success: Record in progress.md
-      - If conflict: Call task-router.abort_merge, then repair
-
-3. Post-merge verification:
-   - Run tests if applicable
-   - Check for broken imports
-   - Verify functionality
-
-4. Error handling:
-   - Patch apply failure: Try cherry-pick or repair
-   - Cherry-pick conflict: Abort and repair
-   - Test failure: Repair with fix instructions
-
-5. Output:
-   - Merge summary
-   - Tasks merged successfully
-   - Tasks with conflicts
-   - Files changed
+- Do not write any files.
+- Abort and repair before retrying a failed merge.

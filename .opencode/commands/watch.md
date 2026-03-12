@@ -1,37 +1,19 @@
 ---
-description: Block on a visible task panel until all dispatched tasks are terminal
+description: Block on a live task panel until all specified tasks complete
 ---
 
-Your task is to load the currently active dispatched tasks and call the blocking MCP watcher so the user can see a task panel until every task is terminal.
+Monitor one or more tasks by calling `task-router.watch_task_group_blocking` directly. Do not read any planning files.
 
-Follow this repository-skill procedure strictly:
+## Steps
 
-0. Treat `.opencode/skills/delegation-rules/SKILL.md` as the canonical source for task identity and grouping expectations recorded during `/delegate`.
+1. Ask the user (or accept as arguments) the list of `task_id` values to watch, and optionally the `agent` for each.
+2. Call `task-router.watch_task_group_blocking` with the task list. This call blocks until every task reaches a terminal state (`completed` or `failed`).
+3. Display the returned `panel_history` or `panel_text` so the user can see the live task panel.
+4. After the call returns, report:
+   - Which tasks completed successfully
+   - Which tasks failed (include error summary if available)
 
-1. Read progress.md to identify active dispatched tasks:
-   - tasks launched by `/delegate`
-   - tasks not yet marked `completed` or `failed`
-   - recover `task_id`, `agent`, and latest `cursor` if known
+## Constraints
 
-2. Build the watcher input:
-   - include all active tasks in a single call to `task-router.watch_task_group_blocking`
-
-3. Call the blocking watcher:
-   - use `task-router.watch_task_group_blocking`
-   - print the returned `panel_history` or final `panel_text` so the user can see the visible task panel snapshots
-   - this command must not return until the MCP tool reports that all tasks are terminal
-
-4. After the blocking watcher returns:
-   - record final statuses in progress.md
-   - optionally collect final task payloads with `task-router.collect_result`
-   - only then allow the orchestrator to continue to `/review`
-
-5. Constraints:
-   - treat both `completed` and `failed` as terminal
-   - do not start `/review`, `/merge`, or later steps until `/watch` finishes
-   - keep the panel output visible and easy to scan
-
-6. Output:
-   - Final panel snapshot
-   - Terminal summary counts
-   - Which tasks completed and which failed
+- Do not write any files.
+- Do not proceed to `/merge` until all watched tasks are terminal.

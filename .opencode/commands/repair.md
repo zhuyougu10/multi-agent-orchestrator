@@ -1,52 +1,24 @@
 ---
-description: Repair failed tasks with fix instructions
+description: Retry a failed task with fix instructions via MCP
 ---
 
-Your task is to fix tasks that failed review or execution.
+Repair a failed task by calling `task-router.retry_task` directly. Do not read or write any planning files.
 
-Follow this repository-skill procedure strictly:
+## Steps
 
-0. Apply these local repository skills before retrying tasks:
-   - `.opencode/skills/verify/SKILL.md`
-   - `.opencode/skills/delegation-rules/SKILL.md`
+1. Accept from the user:
+   - `task_id` — the ID of the failed task
+   - `issue` — description of what went wrong and how to fix it
+   - `preferred_agent` *(optional)* — switch agents if the first attempt failed
+2. *(Optional)* Call `task-router.collect_result` with the `task_id` to review the failure output before deciding on the fix.
+3. Call `task-router.retry_task` with:
+   - `task_id`
+   - `issue` — clear repair instructions
+   - `preferred_agent` *(optional)*
+4. Tell the user the retry has been dispatched and to run `/watch` with the same `task_id` to monitor progress.
 
-1. Read progress.md to identify failed tasks:
-   - Non-zero exit codes
-   - Failed tests
-   - Review rejections
-   - Scope violations
+## Constraints
 
-2. For each failed task:
-   a. Analyze the failure:
-      - Read the result file
-      - Identify the root cause
-      - Check stderr for errors
-      - Review test failures
-
-   b. Prepare repair instructions:
-      - Describe the specific issue
-      - Provide clear fix guidance
-      - Reference any relevant context
-
-   c. Call MCP tool:
-      - task-router.retry_task
-      - task_id: the failed task
-      - issue: detailed repair instructions
-      - preferred_agent: can switch agent if needed
-
-   d. Record the retry in progress.md
-
-3. Retry limits:
-   - Maximum 2 retries per task
-   - After 2 failures, escalate to manual review
-   - Consider switching agents after first failure
-
-4. After retry:
-   - Collect the new result
-   - Re-run review process
-   - Update progress.md
-
-5. Output:
-   - Tasks being retried
-   - Repair instructions provided
-   - Retry count per task
+- Do not write any files.
+- Maximum 2 retries per task; after that, escalate to manual review.
+- Consider switching agents after the first failure.
