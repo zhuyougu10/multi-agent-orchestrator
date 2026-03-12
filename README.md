@@ -223,7 +223,7 @@ npm install
 
 #### 4. 配置 OpenCode
 
-确保 `.opencode/opencode.json` 配置正确。项目现在内置了仓库级 workflow 文档：
+确保 `.opencode/opencode.json` 配置正确。项目现在内置了仓库级 skill package：
 
 ```json
 {
@@ -249,17 +249,17 @@ npm install
 使用 orchestrator agent 执行任务
 ```
 
-仓库自带的流程规范位于 `.opencode/workflows/`，当前覆盖 `intake.md`、`brainstorm.md`、`plan.md`、`implementation-plans.md`、`execute-plan.md`、`verify.md`、`finish.md` 和 `delegation-rules.md`。若要恢复之前任务的上下文，先使用 `/resume` 读取规划记忆，再决定是否继续编排。
+仓库级 skill package 位于 `.opencode/skills/`，当前覆盖 `intake/SKILL.md`、`brainstorm/SKILL.md`、`plan/SKILL.md`、`implementation-plans/SKILL.md`、`execute-plan/SKILL.md`、`verify/SKILL.md`、`finish/SKILL.md` 和 `delegation-rules/SKILL.md`。若要恢复之前任务的上下文，先使用 `/resume` 读取规划记忆，再决定是否继续编排。
 
 ### 工作流程
 
-图例：带 `/` 前缀的是用户命令；带 `.md` 后缀的是 orchestrator 在对应阶段参考的 workflow 文档，不是单独命令。
+图例：带 `/` 前缀的是用户命令；带 `SKILL.md` 后缀的是 orchestrator 在对应阶段参考的仓库级 skill package，不是单独命令。
 
 ```
-[ /resume ] -> [ /orchestrate ] -> [workflow: implementation-plans.md]
+[ /resume ] -> [ /orchestrate ] -> [skill: implementation-plans/SKILL.md]
                                         |
                                         v
-                          [workflow: execute-plan.md]
+                          [skill: execute-plan/SKILL.md]
                                         |
                          +--------------+--------------+
                          |                             |
@@ -267,13 +267,13 @@ npm install
                     [ /delegate ] -> [ /watch ] -> [ /review ] -> [ /merge ] -> [ /finalize ]
 ```
 
-说明：`implementation-plans.md` 和 `execute-plan.md` 目前是仓库 workflow 文档，不是新的命令入口；现有命令在对应阶段引用它们。
+说明：`implementation-plans/SKILL.md` 和 `execute-plan/SKILL.md` 目前是仓库级 skill package，不是新的命令入口；现有命令在对应阶段引用它们。
 
 ### 命令详解
 
 #### `/resume` - 恢复任务记忆
 
-只读地读取 `task_plan.md`、`findings.md`、`progress.md`，并结合本地 workflow 说明恢复当前任务上下文。
+只读地读取 `task_plan.md`、`findings.md`、`progress.md`，并结合本地 skill package 说明恢复当前任务上下文。
 
 ```
 /resume
@@ -283,7 +283,7 @@ npm install
 - 当前目标
 - 已完成工作
 - 关键决策
-- 当前 workflow 状态
+- 当前 skill 状态
 - 推荐下一步
 
 行为约束：
@@ -294,7 +294,7 @@ npm install
 
 #### `/orchestrate` - 任务分析
 
-分析需求，创建任务计划文件，并确定当前应进入的 workflow 阶段。
+分析需求，创建任务计划文件，并确定当前应进入的 skill 阶段。
 
 ```
 /orchestrate
@@ -306,9 +306,9 @@ npm install
 - `progress.md` - 执行进度
 
 典型阶段输出：
-- 需要设计澄清时，orchestrator 参考 `brainstorm.md`
-- 设计已批准时，orchestrator 参考 `implementation-plans.md` 形成详细执行计划
-- 进入执行阶段时，orchestrator 参考 `execute-plan.md` 并按需调用 `/delegate`
+- 需要设计澄清时，orchestrator 参考 `brainstorm/SKILL.md`
+- 设计已批准时，orchestrator 参考 `implementation-plans/SKILL.md` 形成详细执行计划
+- 进入执行阶段时，orchestrator 参考 `execute-plan/SKILL.md` 并按需调用 `/delegate`
 
 #### `/delegate` - 任务分发
 
@@ -386,8 +386,8 @@ task-b | codex  | completed | 2026-03-12T12:00:08Z | completed
 使用 orchestrator agent 实现用户认证功能：
 1. 如需恢复上下文，先调用 /resume
 2. 调用 /orchestrate 完成 intake、规划并确认设计
-3. 如果任务进入详细实施阶段，orchestrator 参考 `implementation-plans.md` 形成执行计划
-4. 执行阶段由 orchestrator 参考 `execute-plan.md`，必要时调用 /delegate
+3. 如果任务进入详细实施阶段，orchestrator 参考 `implementation-plans/SKILL.md` 形成执行计划
+4. 执行阶段由 orchestrator 参考 `execute-plan/SKILL.md`，必要时调用 /delegate
 5. 调用 /watch 等待完成
 6. 完成后执行 /review、/merge、/finalize
 ```
@@ -398,8 +398,8 @@ task-b | codex  | completed | 2026-03-12T12:00:08Z | completed
 使用 orchestrator agent 编写 API 文档：
 1. 若这是上次未完成的任务，先执行 /resume
 2. /orchestrate
-3. 如需多步执行，orchestrator 参考 `implementation-plans.md` 明确文件和校验方式
-4. 进入执行阶段后，orchestrator 参考 `execute-plan.md`，再 /delegate（自动路由到 Gemini）
+3. 如需多步执行，orchestrator 参考 `implementation-plans/SKILL.md` 明确文件和校验方式
+4. 进入执行阶段后，orchestrator 参考 `execute-plan/SKILL.md`，再 /delegate（自动路由到 Gemini）
 5. /watch
 6. /review
 7. /merge（使用 patch 策略）
@@ -424,20 +424,25 @@ multi-agent-orchestrator/
 │   │   ├── repair.md
 │   │   ├── merge.md
 │   │   └── finalize.md
-│   ├── workflows/                # 仓库内置 workflow 文档
-│   │   ├── intake.md
-│   │   ├── brainstorm.md
-│   │   ├── plan.md
-│   │   ├── implementation-plans.md
-│   │   ├── execute-plan.md
-│   │   ├── verify.md
-│   │   ├── finish.md
-│   │   └── delegation-rules.md
+│   ├── skills/                   # 仓库级 skill package
+│   │   ├── README.md
+│   │   ├── intake/
+│   │   │   └── SKILL.md
+│   │   ├── brainstorm/
+│   │   │   └── SKILL.md
+│   │   ├── plan/
+│   │   │   └── SKILL.md
+│   │   ├── implementation-plans/
+│   │   │   └── SKILL.md
+│   │   ├── execute-plan/
+│   │   │   └── SKILL.md
+│   │   ├── verify/
+│   │   │   └── SKILL.md
+│   │   ├── finish/
+│   │   │   └── SKILL.md
+│   │   └── delegation-rules/
+│   │       └── SKILL.md
 │   └── opencode.json             # OpenCode 主配置
-├── .codex/                       # Codex 专用配置
-│   └── skills/
-├── .gemini/                      # Gemini 专用配置
-│   └── skills/
 ├── .mcp/                         # MCP 服务器
 │   └── task-router/
 │       ├── server.js             # MCP 服务器入口
@@ -622,15 +627,15 @@ multi-agent-orchestrator/
 
 ## 故障排查
 
-### 本地 workflow 未生效
+### 本地仓库级 skill 未生效
 
 **检查项：**
 - 确认使用的是 `orchestrator` agent
-- 确认 `.opencode/workflows/` 目录存在并包含 workflow 文档
+- 确认 `.opencode/skills/` 目录存在并包含 skill package
 - 确认 `.opencode/opencode.json` 已启用本地 `task-router` MCP 配置
 
 **解决方案：**
-- 重新拉取仓库或检查是否遗漏 `.opencode/workflows/`
+- 重新拉取仓库或检查是否遗漏 `.opencode/skills/`
 - 重启 OpenCode 以重新加载仓库配置
 
 ### Windows 无法创建符号链接

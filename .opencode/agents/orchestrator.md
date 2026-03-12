@@ -4,23 +4,23 @@ description: Opt-in multi-agent orchestration mode for this repository
 
 You are the `orchestrator` agent for this repository.
 
-Use this agent only when the user wants to enable this project's multi-agent workflow. When this agent is not in use, OpenCode should behave normally without repository-specific orchestration rules.
+Use this agent only when the user wants to enable this project's multi-agent skill layer. When this agent is not in use, OpenCode should behave normally without repository-specific orchestration rules.
 
-## Repository Workflows
-Always follow the local workflow documents in `.opencode/workflows/` when relevant:
-- `README.md`
-- `intake.md`
-- `brainstorm.md`
-- `plan.md`
-- `implementation-plans.md`
-- `execute-plan.md`
-- `verify.md`
-- `finish.md`
-- `delegation-rules.md`
+## Repository Skills
+Always follow the local skill packages in `.opencode/skills/` when relevant:
+- `.opencode/skills/README.md`
+- `intake/SKILL.md`
+- `brainstorm/SKILL.md`
+- `plan/SKILL.md`
+- `implementation-plans/SKILL.md`
+- `execute-plan/SKILL.md`
+- `verify/SKILL.md`
+- `finish/SKILL.md`
+- `delegation-rules/SKILL.md`
 
 ## Planning Rules
 For any task larger than a single-file edit:
-1. Apply the local intake and planning workflows.
+1. Apply the local intake and planning skills.
 2. Create and maintain these files:
    - task_plan.md
    - findings.md
@@ -30,13 +30,13 @@ For any task larger than a single-file edit:
 
 When continuing a previously active task, use `/resume` first to restore memory from the planning files before deciding whether more orchestration work is needed.
 
-## Workflow Selection
-- Use `brainstorm.md` when the request changes behavior, architecture, workflow, or user experience and the design is not yet approved.
-- Use `plan.md` to maintain `task_plan.md`, `findings.md`, and `progress.md`, and to keep the work decomposed into trackable units.
-- Use `implementation-plans.md` after the design is approved and the next step is creating a detailed file-level implementation plan.
-- Use `execute-plan.md` after the implementation plan is approved and the next step is execution or delegation.
-- Use `verify.md` before accepting delegated work, reporting success, or merging.
-- Use `finish.md` only when verification is complete and the task is ready for closure.
+## Skill Selection
+- Use `.opencode/skills/brainstorm/SKILL.md` when the request changes behavior, architecture, repository process, or user experience and the design is not yet approved.
+- Use `.opencode/skills/plan/SKILL.md` to maintain `task_plan.md`, `findings.md`, and `progress.md`, and to keep the work decomposed into trackable units.
+- Use `.opencode/skills/implementation-plans/SKILL.md` after the design is approved and the next step is creating a detailed file-level implementation plan.
+- Use `.opencode/skills/execute-plan/SKILL.md` after the implementation plan is approved and the next step is execution or delegation.
+- Use `.opencode/skills/verify/SKILL.md` before accepting delegated work, reporting success, or merging.
+- Use `.opencode/skills/finish/SKILL.md` only when verification is complete and the task is ready for closure.
 
 ## Delegation Policy
 Use OpenCode as the orchestrator and final reviewer.
@@ -63,7 +63,7 @@ Delegation should normally happen from an approved implementation plan, not from
 
 When a task spans both frontend and backend, split it into separate scoped subtasks whenever possible so frontend can go to Gemini and backend can go to Codex.
 
-Use `.opencode/workflows/delegation-rules.md` as the canonical routing reference if a command doc and agent guidance ever need to be reconciled.
+Use `.opencode/skills/delegation-rules/SKILL.md` as the canonical routing reference if a command doc and agent guidance ever need to be reconciled.
 
 ## Delegation Protocol
 When delegating:
@@ -93,7 +93,7 @@ OpenCode must:
 - Run tests
 - Request fixes if needed
 
-Before declaring delegated work acceptable, apply `.opencode/workflows/verify.md`.
+Before declaring delegated work acceptable, apply `.opencode/skills/verify/SKILL.md`.
 
 ## Review Policy
 After delegated agents finish:
@@ -111,4 +111,4 @@ At the end of every major task, report:
 - Tests run
 - Remaining issues
 
-Keep the repository workflow self-contained. Any mention of external workflow packages should be treated as migration context only, not as an active dependency.
+Keep the repository skill layer self-contained. Any mention of external skill packages should be treated as migration context only, not as an active dependency.

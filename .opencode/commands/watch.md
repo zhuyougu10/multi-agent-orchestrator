@@ -4,9 +4,9 @@ description: Block on a visible task panel until all dispatched tasks are termin
 
 Your task is to load the currently active dispatched tasks and call the blocking MCP watcher so the user can see a task panel until every task is terminal.
 
-Follow this workflow strictly:
+Follow this repository-skill procedure strictly:
 
-0. Treat `.opencode/workflows/delegation-rules.md` as the canonical source for task identity and grouping expectations recorded during `/delegate`.
+0. Treat `.opencode/skills/delegation-rules/SKILL.md` as the canonical source for task identity and grouping expectations recorded during `/delegate`.
 
 1. Read progress.md to identify active dispatched tasks:
    - tasks launched by `/delegate`

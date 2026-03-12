@@ -4,9 +4,9 @@ description: Finalize the task after merge and cleanup
 
 Your task is to finalize the completed work and clean up resources.
 
-Follow this workflow strictly:
+Follow this repository-skill procedure strictly:
 
-0. Apply `.opencode/workflows/finish.md` and use it as the completion checklist.
+0. Apply `.opencode/skills/finish/SKILL.md` and use it as the completion checklist.
 
 1. Verify main workspace:
     - Confirm all approved changes are merged

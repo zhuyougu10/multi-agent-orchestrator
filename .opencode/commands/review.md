@@ -4,9 +4,9 @@ description: Review delegated outputs and select winner
 
 Your task is to review all delegated task results and make decisions.
 
-Follow this workflow strictly:
+Follow this repository-skill procedure strictly:
 
-0. Apply `.opencode/workflows/verify.md` before making any approval decision.
+0. Apply `.opencode/skills/verify/SKILL.md` before making any approval decision.
 
 1. Read progress.md to identify completed tasks
     - Assume `/watch` has already blocked until every relevant dispatched task is terminal

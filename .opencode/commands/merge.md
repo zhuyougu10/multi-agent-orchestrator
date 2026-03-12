@@ -4,9 +4,9 @@ description: Merge the selected winning result back to main workspace
 
 Your task is to merge approved task results into the main workspace.
 
-Follow this workflow strictly:
+Follow this repository-skill procedure strictly:
 
-0. Apply `.opencode/workflows/verify.md` before merging and `.opencode/workflows/finish.md` for post-merge expectations.
+0. Apply `.opencode/skills/verify/SKILL.md` before merging and `.opencode/skills/finish/SKILL.md` for post-merge expectations.
 
 1. Read progress.md to identify tasks approved for merge
 

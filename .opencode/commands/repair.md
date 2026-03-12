@@ -4,7 +4,11 @@ description: Repair failed tasks with fix instructions
 
 Your task is to fix tasks that failed review or execution.
 
-Follow this workflow strictly:
+Follow this repository-skill procedure strictly:
+
+0. Apply these local repository skills before retrying tasks:
+   - `.opencode/skills/verify/SKILL.md`
+   - `.opencode/skills/delegation-rules/SKILL.md`
 
 1. Read progress.md to identify failed tasks:
    - Non-zero exit codes

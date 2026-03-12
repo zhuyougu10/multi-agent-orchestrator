@@ -1,20 +1,19 @@
-# Execute Plan Workflow
+---
+name: execute-plan
+description: Execute an approved implementation plan in order, keep progress synchronized, and stop safely on blockers or design changes. Use once a usable implementation plan already exists.
+---
 
-Use this workflow when an implementation plan is already approved and execution is the next step.
+# Execute Plan
 
-## Goals
+Execute the approved plan without improvising unrecorded design changes.
 
-- execute the approved plan in the intended order
-- keep progress and discoveries synchronized with the planning files
-- avoid improvising new design decisions during execution unless they are recorded and re-approved
-
-## Execution Rules
+## Rules
 
 1. Re-read the approved implementation plan before starting the next phase.
 2. Execute tasks in the documented order unless a recorded dependency change justifies a change.
 3. Update `progress.md` after each meaningful action or verification step.
 4. Update `findings.md` when execution reveals new constraints, caveats, or follow-up work.
-5. If execution requires a design change, pause and route back to the appropriate earlier workflow before continuing.
+5. If execution requires a design change, pause and route back to the appropriate earlier skill before continuing.
 
 ## Delegated Execution
 
@@ -22,6 +21,6 @@ Use this workflow when an implementation plan is already approved and execution 
 - Keep each delegated task aligned to one clear execution unit when possible.
 - Review delegated output against the plan, not just against the final diff.
 
-## Completion Handoff
+## Handoff
 
-When the plan has been executed, move to `verify.md` for evidence gathering and `finish.md` for closure.
+When plan execution is complete, move to `verify` for evidence gathering and `finish` for closure.

@@ -4,9 +4,9 @@ description: Dispatch planned tasks to Codex and Gemini via MCP
 
 Your task is to delegate tasks from task_plan.md to the appropriate agents.
 
-Follow this workflow strictly:
+Follow this repository-skill procedure strictly:
 
-0. Apply `.opencode/workflows/delegation-rules.md` before choosing agents or modes.
+0. Apply `.opencode/skills/delegation-rules/SKILL.md` before choosing agents or modes.
 
 1. Read task_plan.md to identify ready tasks:
    - Tasks with no dependencies
