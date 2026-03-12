@@ -1,59 +1,44 @@
 ---
-description: Dispatch planned tasks to Codex and Gemini via MCP
+description: Dispatch a task directly to Codex or Gemini via MCP
 ---
 
-Your task is to delegate tasks from task_plan.md to the appropriate agents.
+Dispatch the user-described task to the appropriate agent by calling `task-router.dispatch_task` directly. Do not read or write any planning files.
 
-Follow this repository-skill procedure strictly:
+## Agent routing
 
-0. Apply `.opencode/skills/delegation-rules/SKILL.md` before choosing agents or modes.
+Choose `preferred_agent` based on task type:
 
-1. Read task_plan.md to identify ready tasks:
-   - Tasks with no dependencies
-   - Tasks whose dependencies are completed
+| Task type | Agent |
+|-----------|-------|
+| implementation, refactor, tests, bugfix, script | codex |
+| docs, summarization, comparison, ux-copy | gemini |
 
-2. For each ready task:
-   a. Determine the agent:
-      - Use preferred_agent if specified
-      - Otherwise route by task type:
-         - implementation, refactor, tests, bugfix, script → Codex
-         - docs, summarization, comparison, ux-copy → Gemini
-      - Override toward Gemini for frontend/UI/UX-heavy tasks
-      - Override toward Codex for backend/API/data/test-heavy tasks
+Override toward **gemini** for frontend/UI/UX-heavy work; override toward **codex** for backend/API/data/test-heavy work.
 
-   b. Prepare the dispatch:
-      - task_id: from task_plan.md
-      - task_type: from task_plan.md
-      - cwd: current working directory
-      - prompt: detailed instructions with constraints
-      - files_scope: relevant file patterns
-      - mode: single, fallback, or race
-      - test_command: if applicable
+## Execution modes
 
-    c. Call MCP tool:
-       - task-router.dispatch_task with the prepared parameters
+- `single` — one agent only (default)
+- `fallback` — try primary agent first, switch to secondary on failure
+- `race` — dispatch to both agents in parallel, take the winner
 
-    d. Record the dispatch in progress.md
-       - Store enough information for a later `/watch` run:
-         - task_id
-         - agent
-         - initial cursor=0
-         - dispatched_at
+## Steps
 
-3. After dispatch:
-   - Return immediately after all dispatches are recorded
-   - Do not block here
-   - Tell the user or next orchestrator step to run `/watch` when they want to see the live task panel and wait for completion
+1. Determine `task_type` and `preferred_agent` from the user's description.
+2. Assign a short, descriptive `task_id` (e.g. `impl-auth-module`).
+3. Call `task-router.dispatch_task` with:
+   - `task_id` — unique identifier for this task
+   - `task_type` — one of the types above
+   - `cwd` — current working directory
+   - `prompt` — detailed, actionable instructions
+   - `preferred_agent` — `codex` or `gemini`
+   - `mode` — `single`, `fallback`, or `race`
+   - `files_scope` *(optional)* — glob patterns for relevant files
+   - `test_command` *(optional)* — command to run tests after execution
+4. Return immediately. Do not block.
+5. Tell the user the `task_id` and remind them to run `/watch` to monitor progress.
 
-4. Constraints:
-    - Do not overlap file scopes between concurrent tasks
-    - Keep prompts specific and actionable
-    - Require structured JSON output
-    - Prefer splitting full-stack work into separate frontend/backend dispatches
-    - Do not begin review or merge until `/watch` has completed for the relevant task set
+## Constraints
 
-5. Output:
-    - Dispatch summary
-    - Task IDs dispatched
-    - Agents assigned
-    - Reminder to use `/watch` for the blocking task panel
+- Do not write any files.
+- Do not overlap `files_scope` between concurrent tasks.
+- Keep prompts specific and actionable.
