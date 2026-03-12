@@ -249,15 +249,21 @@ npm install
 使用 orchestrator agent 执行任务
 ```
 
-仓库自带的流程规范位于 `.opencode/workflows/`，其中定义了 intake、brainstorm、plan、verify、finish 和 delegation-rules 六个本地 workflow。
+仓库自带的流程规范位于 `.opencode/workflows/`，其中定义了 intake、brainstorm、plan、verify、finish 和 delegation-rules 六个本地 workflow。若要恢复之前任务的上下文，先使用 `/resume` 读取规划记忆，再决定是否继续编排。
 
 ### 工作流程
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ /orchestrate│ ──▶ │  /delegate  │ ──▶ │   /watch    │
-│  分析任务    │     │  分发任务    │     │  监控面板   │
+│  /resume    │ ──▶ │ /orchestrate│ ──▶ │  /delegate  │
+│  恢复记忆    │     │  分析任务    │     │  分发任务    │
 └─────────────┘     └─────────────┘     └─────────────┘
+                                                    │
+                                                    ▼
+                                         ┌─────────────┐
+                                         │   /watch    │
+                                         │  监控面板   │
+                                         └─────────────┘
                                               │
                                               ▼
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
@@ -267,6 +273,27 @@ npm install
 ```
 
 ### 命令详解
+
+#### `/resume` - 恢复任务记忆
+
+只读地读取 `task_plan.md`、`findings.md`、`progress.md`，并结合本地 workflow 说明恢复当前任务上下文。
+
+```
+/resume
+```
+
+输出内容：
+- 当前目标
+- 已完成工作
+- 关键决策
+- 当前 workflow 状态
+- 推荐下一步
+
+行为约束：
+- 不修改任何文件
+- 不自动触发 `/orchestrate`
+- 若部分记忆文件缺失，会标记缺失项并总结可恢复信息
+- 若三个主记忆文件都不存在，会提示没有可恢复的项目记忆，并建议使用 `/orchestrate`
 
 #### `/orchestrate` - 任务分析
 
@@ -355,22 +382,24 @@ task-b | codex  | completed | 2026-03-12T12:00:08Z | completed
 
 ```
 使用 orchestrator agent 实现用户认证功能：
-1. 先调用 /orchestrate 分析需求
-2. 调用 /delegate 分发任务
-3. 调用 /watch 等待完成
-4. 完成后执行 /review、/merge、/finalize
+1. 如需恢复上下文，先调用 /resume
+2. 调用 /orchestrate 分析需求
+3. 调用 /delegate 分发任务
+4. 调用 /watch 等待完成
+5. 完成后执行 /review、/merge、/finalize
 ```
 
 #### 示例 2：编写文档
 
 ```
 使用 orchestrator agent 编写 API 文档：
-1. /orchestrate
-2. /delegate（自动路由到 Gemini）
-3. /watch
-4. /review
-5. /merge（使用 patch 策略）
-6. /finalize
+1. 若这是上次未完成的任务，先执行 /resume
+2. /orchestrate
+3. /delegate（自动路由到 Gemini）
+4. /watch
+5. /review
+6. /merge（使用 patch 策略）
+7. /finalize
 ```
 
 ---
@@ -383,6 +412,7 @@ multi-agent-orchestrator/
 │   ├── agents/
 │   │   └── orchestrator.md       # 编排器 Agent 配置
 │   ├── commands/                 # 自定义命令
+│   │   ├── resume.md
 │   │   ├── orchestrate.md
 │   │   ├── delegate.md
 │   │   ├── watch.md

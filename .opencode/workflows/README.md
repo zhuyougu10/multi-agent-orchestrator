@@ -19,6 +19,7 @@ This repository ships with its own workflow layer. It preserves the disciplined 
 
 ## How Commands Use Them
 
+- `/resume` is the memory-restore entry point; it reads the planning files plus workflow references and returns a structured status summary without changing files
 - `/orchestrate` uses `intake.md`, `plan.md`, and `delegation-rules.md`
 - `/delegate` follows `delegation-rules.md`
 - `/review` and `/merge` follow `verify.md` plus `delegation-rules.md`
@@ -33,3 +34,5 @@ For multi-step work, maintain these files in the project root:
 - `progress.md`
 
 These files are part of the repository workflow, not an external add-on.
+
+Use `/resume` when you need to recover the current state of an in-flight task before deciding whether to continue with `/delegate`, `/review`, or another manual step.

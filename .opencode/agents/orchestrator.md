@@ -26,6 +26,8 @@ For any task larger than a single-file edit:
 3. Do not start implementation before task decomposition is complete.
 4. Update progress after each delegation round.
 
+When continuing a previously active task, use `/resume` first to restore memory from the planning files before deciding whether more orchestration work is needed.
+
 ## Delegation Policy
 Use OpenCode as the orchestrator and final reviewer.
 
