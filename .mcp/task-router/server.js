@@ -16,7 +16,9 @@ import {
   worktreePath,
   worktreeBranch,
   patchDir,
-  taskEventFile
+  taskEventFile,
+  SCORE_ROOT,
+  RESULT_ROOT
 } from "./lib/paths.js";
 import { appendJsonLine, exists, readJson, safeUnlink, writeJsonAtomic } from "./lib/storage.js";
 import { execCmd } from "./lib/process.js";
@@ -25,20 +27,23 @@ import {
   extractJsonObject,
   isStructuredTaskSuccessful,
   normalizeStructuredStdout,
-  scoreRunStatus,
-  shouldCommitWorktree,
-  validateOutputShape
+  shouldCommitWorktree
 } from "./lib/result-utils.js";
 import { sanitizeTaskId } from "./lib/validation.js";
 import { AGENT_SCHEMA, OPTIONAL_AGENT_SCHEMA, PREFERRED_AGENT_SCHEMA, chooseAgent } from "./lib/agents.js";
 import { gitCommitAll } from "./lib/git.js";
 import { assertTaskNotActive } from "./lib/job-state.js";
 import { createTaskEventHub } from "./lib/task-events.js";
-import { matchesFilesScope } from "./lib/files-scope.js";
 import { buildCherryPickMergePayload, buildPatchMergePayload, buildPrepareMergePayload } from "./lib/merge-flow.js";
 import { resolveCollectedAgent, selectCollectedPayload } from "./lib/result-collection.js";
 import { buildPatchCommandArgs } from "./lib/merge-utils.js";
 import { collectPanelSnapshotsUntilTerminal, createTaskPanelState, updateTaskPanelState } from "./lib/task-panel.js";
+import { registerProcess, unregisterProcess, cancelAllForTask, listActiveProcesses } from "./lib/process-registry.js";
+import { assertCanRetry, incrementRetryCount } from "./lib/retry-guard.js";
+import { buildTaskHistory } from "./lib/task-history.js";
+import { acquireSlot, releaseSlot, getConcurrencyStatus, setMaxConcurrent } from "./lib/concurrency.js";
+import { rotateEventFile } from "./lib/event-rotation.js";
+import { computeScore, scopeSignals, buildEarlyFailureResult } from "./lib/scoring.js";
 
 ensureDirs();
 
@@ -50,6 +55,9 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+let publishCounter = 0;
+const EVENT_ROTATION_INTERVAL = 50; // 每 50 次发布检查一次事件文件大小
+
 function publishTaskEvent(taskId, agent, eventType, details = {}) {
   const event = {
     task_id: taskId,
@@ -58,8 +66,14 @@ function publishTaskEvent(taskId, agent, eventType, details = {}) {
     timestamp: nowIso(),
     ...details
   };
-  appendJsonLine(taskEventFile(taskId), event);
+  const eventFile = taskEventFile(taskId);
+  appendJsonLine(eventFile, event);
   taskEventHub.publish(event);
+
+  publishCounter++;
+  if (publishCounter % EVENT_ROTATION_INTERVAL === 0) {
+    rotateEventFile(eventFile);
+  }
 }
 
 function storedTerminalEvents(taskId, agent) {
@@ -181,63 +195,6 @@ function tryParseJson(text) {
   return extractJsonObject(text);
 }
 
-function scopeSignals(filesScope, diffNames = []) {
-  if (!Array.isArray(filesScope) || filesScope.length === 0) {
-    return { ok: true, out_of_scope_files: [] };
-  }
-  const out = diffNames.filter((file) => !matchesFilesScope(filesScope, file));
-  return {
-    ok: out.length === 0,
-    out_of_scope_files: out
-  };
-}
-
-function computeScore({ result, outputSchema, filesScope }) {
-  let score = 100;
-  const notes = [];
-  const parsed = tryParseJson(result.stdout || "");
-  const runStatus = scoreRunStatus(result, parsed.ok);
-
-  score -= runStatus.penalty;
-  notes.push(...runStatus.notes);
-  if (result.tests?.attempted && result.tests.exit_code !== 0) {
-    score -= 20;
-    notes.push("tests failed");
-  }
-  if (result.stderr?.trim()) {
-    score -= 10;
-    notes.push("stderr not empty");
-  }
-
-  if (!parsed.ok) {
-    score -= 20;
-    notes.push("stdout is not valid JSON");
-  }
-
-  const shape = parsed.ok
-    ? validateOutputShape(parsed.value, outputSchema)
-    : { ok: false, notes: [] };
-  if (!shape.ok) {
-    score -= 20;
-    notes.push(...shape.notes);
-  }
-
-  const scope = scopeSignals(filesScope, result.artifacts?.git_diff_names || []);
-  if (!scope.ok) {
-    score -= 15;
-    notes.push(`out of scope files: ${scope.out_of_scope_files.join(", ")}`);
-  }
-
-  return {
-    score: Math.max(0, score),
-    notes,
-    parsed_json_ok: parsed.ok,
-    schema_ok: shape.ok,
-    scope_ok: scope.ok,
-    out_of_scope_files: scope.out_of_scope_files || []
-  };
-}
-
 async function makePatch(wtPath, taskId, agent, result = null) {
   const outDir = patchDir(taskId, agent);
   fs.mkdirSync(outDir, { recursive: true });
@@ -268,45 +225,16 @@ async function abortCherryPick(cwd) {
   return execCmd("git", ["cherry-pick", "--abort"], cwd, {}, { shell: true });
 }
 
-function buildEarlyFailureResult({ taskId, agent, cwd, executionContext, stderrMessage }) {
-  return {
-    ok: false,
-    task_id: taskId,
-    agent,
-    cwd,
-    execution_mode: executionContext.mode || "unknown",
-    worktree_path: executionContext.path || "",
-    worktree_branch: executionContext.branch || "",
-    exit_code: 1,
-    timed_out: false,
-    idle_terminated: false,
-    started_at: nowIso(),
-    finished_at: nowIso(),
-    stdout: "",
-    stderr: stderrMessage,
-    tests: {
-      attempted: false,
-      exit_code: null,
-      stdout: "",
-      stderr: ""
-    },
-    artifacts: {
-      git_status: "",
-      git_diff_stat: "",
-      git_diff: "",
-      git_diff_names: []
-    },
-    commit: {
-      attempted: false,
-      exit_code: null,
-      stdout: "",
-      stderr: "",
-      head_sha: ""
-    }
-  };
+async function runInWorktree(job, agent) {
+  await acquireSlot();
+  try {
+    return await runInWorktreeInner(job, agent);
+  } finally {
+    releaseSlot();
+  }
 }
 
-async function runInWorktree(job, agent) {
+async function runInWorktreeInner(job, agent) {
   const safeTaskId = sanitizeTaskId(job.task_id);
   const executionContext = await resolveExecutionContext(
     job.cwd,
@@ -325,7 +253,8 @@ async function runInWorktree(job, agent) {
       agent,
       cwd: job.cwd,
       executionContext,
-      stderrMessage: `worktree creation failed\n${executionContext.stderr || ""}`
+      stderrMessage: `worktree creation failed\n${executionContext.stderr || ""}`,
+      nowIso
     });
     writeJsonAtomic(resultFile(safeTaskId, agent), failed);
     return failed;
@@ -348,7 +277,8 @@ async function runInWorktree(job, agent) {
       agent,
       cwd: job.cwd,
       executionContext,
-      stderrMessage: `buildArgs failed: ${err.message}`
+      stderrMessage: `buildArgs failed: ${err.message}`,
+      nowIso
     });
     writeJsonAtomic(resultFile(safeTaskId, agent), failed);
     return failed;
@@ -364,7 +294,7 @@ async function runInWorktree(job, agent) {
       phase: "agent_run"
     });
   }, HEARTBEAT_INTERVAL_MS);
-  const run = await execCmd(
+  const runPromise = execCmd(
     built.command,
     built.args,
     executionContext.path,
@@ -386,6 +316,11 @@ async function runInWorktree(job, agent) {
       idleTimeoutMs: job.idle_timeout_ms ?? DEFAULT_IDLE_TIMEOUT_MS
     }
   );
+  if (runPromise._child) {
+    registerProcess(safeTaskId, agent, runPromise._child);
+  }
+  const run = await runPromise;
+  unregisterProcess(safeTaskId, agent);
   clearInterval(heartbeat);
 
   publishTaskEvent(safeTaskId, agent, "tests_started", {
@@ -470,7 +405,8 @@ async function runInWorktree(job, agent) {
   const scored = computeScore({
     result,
     outputSchema: job.output_schema,
-    filesScope: job.files_scope
+    filesScope: job.files_scope,
+    constraints: job.constraints
   });
 
   const scorePayload = {
@@ -503,7 +439,21 @@ async function runSingle(job, agent) {
 
 async function runFallback(job, primaryAgent) {
   const first = await runSingle(job, primaryAgent);
-  if (first.ok) {
+  const scoreThreshold = job.score_threshold || 0;
+
+  // 检查是否需要 fallback：执行失败 或 分数低于阈值
+  let needsFallback = !first.ok;
+  if (!needsFallback && scoreThreshold > 0) {
+    const sf = scoreFile(job.task_id, primaryAgent);
+    if (exists(sf)) {
+      const scored = readJson(sf);
+      if (scored.score < scoreThreshold) {
+        needsFallback = true;
+      }
+    }
+  }
+
+  if (!needsFallback) {
     return {
       ok: true,
       selected_agent: primaryAgent,
@@ -512,9 +462,22 @@ async function runFallback(job, primaryAgent) {
   }
   const secondary = alternateAgent(primaryAgent);
   const second = await runSingle(job, secondary);
+
+  // 从两个结果中选择分数更高的
+  let selectedAgent = primaryAgent;
+  const sf1 = scoreFile(job.task_id, primaryAgent);
+  const sf2 = scoreFile(job.task_id, secondary);
+  if (exists(sf1) && exists(sf2)) {
+    const score1 = readJson(sf1).score;
+    const score2 = readJson(sf2).score;
+    selectedAgent = score2 > score1 ? secondary : primaryAgent;
+  } else if (second.ok && !first.ok) {
+    selectedAgent = secondary;
+  }
+
   return {
     ok: [first, second].some((r) => r.ok),
-    selected_agent: second.ok ? secondary : primaryAgent,
+    selected_agent: selectedAgent,
     results: [first, second]
   };
 }
@@ -574,9 +537,11 @@ server.tool(
     mode: z.enum(["single", "fallback", "race"]).default("fallback"),
     test_command: z.string().default(""),
     output_schema: z.record(z.string()).optional(),
-    timeout_ms: z.number().int().min(1000).max(600000).default(300000)
+    timeout_ms: z.number().int().min(1000).max(600000).default(300000),
+    idle_timeout_ms: z.number().int().min(500).max(60000).default(3000),
+    score_threshold: z.number().int().min(0).max(100).default(0)
   },
-  async ({ task_id, task_type, cwd, prompt, files_scope, constraints, preferred_agent, mode, test_command, output_schema, timeout_ms }) => {
+  async ({ task_id, task_type, cwd, prompt, files_scope, constraints, preferred_agent, mode, test_command, output_schema, timeout_ms, idle_timeout_ms, score_threshold }) => {
     const safeTaskId = sanitizeTaskId(task_id);
     const existingIndex = exists(resultFile(safeTaskId)) ? readJson(resultFile(safeTaskId)) : null;
     assertTaskNotActive(safeTaskId, existingIndex);
@@ -594,6 +559,8 @@ server.tool(
       test_command,
       output_schema,
       timeout_ms,
+      idle_timeout_ms,
+      score_threshold,
       created_at: nowIso()
     };
     writeJsonAtomic(jobFile(safeTaskId), job);
@@ -804,9 +771,10 @@ server.tool(
     task_id: z.string(),
     agent: AGENT_SCHEMA,
     output_schema: z.record(z.string()).optional(),
-    files_scope: z.array(z.string()).default([])
+    files_scope: z.array(z.string()).default([]),
+    constraints: z.array(z.string()).default([])
   },
-  async ({ task_id, agent, output_schema, files_scope }) => {
+  async ({ task_id, agent, output_schema, files_scope, constraints }) => {
     const safeTaskId = sanitizeTaskId(task_id);
     const file = resultFile(safeTaskId, agent);
     if (!exists(file)) {
@@ -821,7 +789,8 @@ server.tool(
     const scored = computeScore({
       result,
       outputSchema: output_schema,
-      filesScope: files_scope
+      filesScope: files_scope,
+      constraints
     });
     const payload = {
       task_id: safeTaskId,
@@ -855,15 +824,18 @@ server.tool(
     const job = readJson(jf);
     const existingIndex = exists(resultFile(safeTaskId)) ? readJson(resultFile(safeTaskId)) : null;
     assertTaskNotActive(safeTaskId, existingIndex);
-    const agent = chooseAgent(job.task_type, preferred_agent);
+    assertCanRetry(safeTaskId, job);
+    const updatedJob = incrementRetryCount(job);
+    writeJsonAtomic(jf, updatedJob);
+    const agent = chooseAgent(updatedJob.task_type, preferred_agent);
     const retryPrompt =
-      `${job.prompt}\n\nRepair instructions:\n${issue}\n\nReturn valid JSON only and stay within declared scope.`;
+      `${updatedJob.prompt}\n\nRepair instructions:\n${issue}\n\nReturn valid JSON only and stay within declared scope.`;
     const result = await runInWorktree(
-      { ...job, prompt: retryPrompt },
+      { ...updatedJob, prompt: retryPrompt },
       agent
     );
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+      content: [{ type: "text", text: JSON.stringify({ ...result, retry_count: updatedJob.retry_count }, null, 2) }]
     };
   }
 );
@@ -885,6 +857,15 @@ server.tool(
       }
     });
     return { content: [{ type: "text", text: JSON.stringify({ ok: true, jobs }, null, 2) }] };
+  }
+);
+
+server.tool(
+  "task_history",
+  {},
+  async () => {
+    const history = buildTaskHistory(jobsDir(), SCORE_ROOT, RESULT_ROOT);
+    return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...history }, null, 2) }] };
   }
 );
 
@@ -918,10 +899,12 @@ server.tool(
         };
       }
       const patch = await makePatch(bundle.result.worktree_path, safeTaskId, agent, bundle.result);
+      const diffStatResult = await execCmd("git", ["diff", "--stat"], bundle.result.worktree_path, {}, { shell: true });
+      const diffStat = diffStatResult.stdout || "";
       return {
         content: [{
           type: "text",
-          text: JSON.stringify(buildPrepareMergePayload({ taskId: safeTaskId, agent, strategy, bundle, patch }), null, 2)
+          text: JSON.stringify(buildPrepareMergePayload({ taskId: safeTaskId, agent, strategy, bundle, patch, diffStat }), null, 2)
         }]
       };
     }
@@ -1019,6 +1002,45 @@ server.tool(
 );
 
 server.tool(
+  "cancel_task",
+  { task_id: z.string() },
+  async ({ task_id }) => {
+    const safeTaskId = sanitizeTaskId(task_id);
+    const killed = cancelAllForTask(safeTaskId);
+    if (killed.length === 0) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ ok: false, error: "no active processes found", task_id: safeTaskId }, null, 2)
+        }]
+      };
+    }
+    publishTaskEvent(safeTaskId, killed[0]?.agent || null, "failed", {
+      phase: "cancelled",
+      message: "task cancelled by user"
+    });
+    const indexPath = resultFile(safeTaskId);
+    if (exists(indexPath)) {
+      const indexData = readJson(indexPath);
+      if (indexData.status === "running") {
+        writeJsonAtomic(indexPath, {
+          ...indexData,
+          status: "cancelled",
+          ok: false,
+          cancelled_at: nowIso()
+        });
+      }
+    }
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({ ok: true, task_id: safeTaskId, killed }, null, 2)
+      }]
+    };
+  }
+);
+
+server.tool(
   "cleanup_task",
   { task_id: z.string() },
   async ({ task_id }) => {
@@ -1040,9 +1062,18 @@ server.tool(
       if (fs.existsSync(wtPath)) {
         cleaned.push(await removeWorktree(job.cwd, safeTaskId, agent));
       }
+      safeUnlink(resultFile(safeTaskId, agent));
+      safeUnlink(scoreFile(safeTaskId, agent));
+      safeUnlink(bundleFile(safeTaskId, agent));
+      const pd = patchDir(safeTaskId, agent);
+      if (fs.existsSync(pd)) {
+        fs.rmSync(pd, { recursive: true, force: true });
+      }
     }
+    safeUnlink(resultFile(safeTaskId));
     safeUnlink(taskEventFile(safeTaskId));
-    return { content: [{ type: "text", text: JSON.stringify({ ok: true, task_id: safeTaskId, cleaned }, null, 2) }] };
+    safeUnlink(jf);
+    return { content: [{ type: "text", text: JSON.stringify({ ok: true, task_id: safeTaskId, cleaned, files_removed: true }, null, 2) }] };
   }
 );
 

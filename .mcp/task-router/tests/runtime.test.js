@@ -40,7 +40,8 @@ test("uses worktree execution for git directories", async () => {
 test("codex direct execution skips git trust check", () => {
   const built = buildArgs("codex", "hello");
 
-  assert.equal(built.command, "powershell");
+  const isWindows = process.platform === "win32";
+  assert.equal(built.command, isWindows ? "powershell" : "/bin/sh");
   assert.equal(built.args.at(-1).includes("--skip-git-repo-check"), true);
 });
 

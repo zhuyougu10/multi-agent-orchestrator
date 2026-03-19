@@ -28,7 +28,7 @@ test("buildPrepareMergePayload returns commit sha for cherry-pick strategy", () 
     taskId: "task-1",
     agent: "gemini",
     strategy: "cherry-pick",
-    bundle: { result: { commit: { head_sha: "abc123" } } }
+    bundle: { result: { commit: { head_sha: "abc123" }, artifacts: { git_diff_stat: "1 file changed", git_diff_names: ["src/app.js"] } } }
   });
 
   assert.deepEqual(payload, {
@@ -36,7 +36,9 @@ test("buildPrepareMergePayload returns commit sha for cherry-pick strategy", () 
     task_id: "task-1",
     agent: "gemini",
     strategy: "cherry-pick",
-    commit_sha: "abc123"
+    commit_sha: "abc123",
+    diff_stat: "1 file changed",
+    files_changed: ["src/app.js"]
   });
 });
 

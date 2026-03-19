@@ -20,6 +20,13 @@ Run `watch-ui.js` directly in the current terminal so one fixed panel can render
 4. The watcher should own the terminal while it is running. Do not print extra progress text before it exits.
 5. After the watcher exits, summarize terminal outcomes if needed.
 
+## If a task is stuck
+
+If a task appears stuck (no heartbeat for a long time, or running far beyond expected duration):
+
+- Suggest the user run `/cancel <task_id>` to kill the running agent process.
+- The watcher will reflect the cancelled state once the process terminates.
+
 ## Manual fallback
 
 ```

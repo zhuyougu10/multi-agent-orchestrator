@@ -19,20 +19,20 @@ export function execCmd(command, args, cwd, extraEnv = {}, options = {}) {
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   const idleTimeoutMs = options.idleTimeoutMs ?? null;
 
-  return new Promise((resolve) => {
+  const child = spawn(command, args, {
+    cwd,
+    shell: options.shell ?? true,
+    windowsHide: true,
+    env: { ...process.env, ...extraEnv }
+  });
+
+  const promise = new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
     let timedOut = false;
     let idleTerminated = false;
     let settled = false;
     let idleTimer = null;
-
-    const child = spawn(command, args, {
-      cwd,
-      shell: options.shell ?? true,
-      windowsHide: true,
-      env: { ...process.env, ...extraEnv }
-    });
 
     const finish = (payload) => {
       if (settled) return;
@@ -88,4 +88,7 @@ export function execCmd(command, args, cwd, extraEnv = {}, options = {}) {
       });
     });
   });
+
+  promise._child = child;
+  return promise;
 }

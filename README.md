@@ -14,8 +14,11 @@
 
 - 用 `/delegate` 把任务交给合适的代理
 - 用 `/watch` 在当前终端打开固定 watcher 面板
+- 用 `/cancel` 取消卡死或不再需要的运行中任务
 - 用 `/repair` 对失败任务追加修复说明并重试
+- 用 `/history` 查看任务历史、分数和代理表现
 - 用 `/merge` 把胜出的结果合并回当前工作区
+- 用 `/cleanup` 清理已完成任务的全部工件
 
 项目强调：
 
@@ -39,8 +42,17 @@
 支持三种执行模式：
 
 - `single`：只运行一个代理
-- `fallback`：主代理失败后自动切换备用代理（默认）
+- `fallback`：主代理失败后，或分数低于阈值时自动切换备用代理（默认）
 - `race`：两个代理并行运行并选择结果更优的一方
+
+派发时还支持以下质量控制能力：
+
+- `constraints`：声明任务必须满足的约束条件，并进入打分链路
+- `output_schema`：要求代理输出包含指定字段，用于结构化验收
+- `score_threshold`：为 `fallback` 模式设置最低可接受分数
+- `idle_timeout_ms`：控制长思考任务的空闲超时，避免误杀
+
+系统默认最多并发执行 **4 个任务**；超出的任务会自动排队。
 
 ### 2. 固定 watcher 面板
 
@@ -58,9 +70,20 @@
 - 产物信息
 - 评分结果
 
+评分不仅看任务是否“成功”，还会同时考虑：
+
+- 结构化输出是否合法 JSON
+- `output_schema` 是否满足
+- 文件修改是否超出 `files_scope`
+- `constraints` 是否被违反
+- 测试是否通过
+- `stderr` 是否存在额外噪音
+
 ### 4. 失败修复与重试
 
 当任务失败时，可以通过 `/repair` 或 `retry_task` 在原任务语境上追加修复说明并重新执行。
+
+系统会自动追踪 `retry_count`，并强制每个任务**最多重试 2 次**。
 
 ### 5. 安全合并
 
@@ -68,6 +91,20 @@
 
 - `patch`：适合文档、小规模文本改动
 - `cherry-pick`：适合代码实现、重构和测试修改
+
+在真正合并前，`prepare_merge` 会返回：
+
+- `diff_stat`：变更统计
+- `files_changed`：受影响文件列表
+- `patch_file` 或 `commit_sha`：用于实际应用结果
+
+### 6. 任务取消、回顾与清理
+
+除派发、观察、修复和合并外，当前还支持：
+
+- `cancel_task` / `/cancel`：终止运行中的代理进程，并将任务标记为 `cancelled`
+- `task_history` / `/history`：回顾任务总数、状态分布、平均分、重试次数和代理表现
+- `cleanup_task` / `/cleanup`：清理 worktree、分支、结果、分数、bundle、patch、事件和 job 文件
 
 ---
 
@@ -80,7 +117,9 @@
 3. `task-router` 在独立 worktree 中运行代理任务
 4. 任务执行期间持续产生日志、结果文件和事件数据
 5. 通过 `watch-ui.js` 或 `collect_result` 观察执行结果
-6. 确认无误后使用 `/merge` 合并结果
+6. 如任务卡死，可用 `/cancel` 终止
+7. 确认无误后使用 `/merge` 合并结果
+8. 使用 `/cleanup` 清理完成任务的工件
 
 典型链路：
 
@@ -89,8 +128,11 @@
 -> task-router.dispatch_task
 -> 代理执行
 -> watch-ui.js / collect_result
+-> /cancel（如卡死）
 -> /repair（如有失败）
+-> /history（如需复盘）
 -> /merge
+-> /cleanup
 ```
 
 ---
@@ -109,8 +151,10 @@
 
 建议环境：
 
-- Windows PowerShell 或兼容终端
+- Windows PowerShell、macOS Terminal、Linux shell 或兼容终端
 - 能正常访问本地 Node.js 与 Git 命令
+
+说明：当前 runner 已支持跨平台，Windows 使用 PowerShell，Unix-like 环境使用 `sh`。
 
 ---
 
@@ -211,7 +255,19 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 - `preferred_agent`
 - `mode`
 - `files_scope`
+- `constraints`
 - `test_command`
+- `output_schema`
+- `timeout_ms`
+- `idle_timeout_ms`
+- `score_threshold`
+
+推荐实践：
+
+- 长思考或大改动任务显式设置 `idle_timeout_ms`
+- 质量要求明确的任务显式设置 `constraints`
+- 需要结构化验收的任务设置 `output_schema`
+- 使用 `score_threshold=60` 作为通用质量门槛
 
 ### 2. 观察任务
 
@@ -225,6 +281,8 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 - 在当前终端直接运行 `watch-ui.js`
 - 使用一个固定面板显示多个任务状态
 - 不再在模型会话里重复输出大量轮询文本
+
+如果任务长时间没有心跳或明显卡死，建议先结合 `idle_timeout_ms` 判断，再使用 `/cancel` 终止任务。
 
 ### 3. 收集结果
 
@@ -256,7 +314,27 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 - 结果格式不符合要求
 - 需要基于失败信息增加修复指令
 
-### 5. 合并结果
+注意：`retry_task` 现在有**最多 2 次重试**的硬限制，超限后需要新建任务或人工介入。
+
+### 5. 取消运行中任务
+
+在 OpenCode 中使用：
+
+- `/cancel`
+
+底层对应工具：
+
+- `cancel_task`
+
+适用场景：
+
+- 任务长时间无心跳
+- 方向错误，需要立刻中止
+- 需要释放并发槽位给更高优先级任务
+
+说明：`/cancel` 只负责终止运行中的任务，不会删除工件；清理请使用 `/cleanup`。
+
+### 6. 合并结果
 
 在 OpenCode 中使用：
 
@@ -271,6 +349,38 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 
 - 文档和小文本改动：`patch`
 - 代码实现、重构、测试改动：`cherry-pick`
+
+合并前建议重点检查：
+
+- `diff_stat` 是否符合预期范围
+- `files_changed` 是否只涉及目标文件
+- `patch_file` 或 `commit_sha` 是否存在
+
+### 7. 回顾历史与清理工件
+
+回顾历史：
+
+- `/history`
+- `task_history`
+
+可以查看：
+
+- `status_counts`
+- `average_score`
+- `total_retries`
+- `agent_stats`
+
+清理工件：
+
+- `/cleanup`
+- `cleanup_task`
+
+会清理：
+
+- worktree 与分支
+- result / score / bundle 文件
+- patch 目录
+- 事件文件与 job 文件
 
 ---
 
@@ -287,6 +397,8 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 | `watch_task_group_blocking` | 阻塞直到任务组终态 |
 | `score_result` | 对任务结果评分 |
 | `retry_task` | 使用修复说明重试任务 |
+| `cancel_task` | 取消运行中的任务 |
+| `task_history` | 查看任务历史与统计 |
 | `prepare_merge` | 预览待合并结果 |
 | `merge_winner` | 应用结果到当前工作区 |
 | `abort_merge` | 中止 merge 流程 |
@@ -315,7 +427,7 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 
 ### 4. 为什么任务结果是成功的，但 score 偏低？
 
-评分不仅看任务是否成功，还会考虑 `stderr`、结构化输出、测试情况、scope 等因素。例如某些 CLI 会向 `stderr` 写环境信息，这会影响得分但不一定代表任务失败。
+评分不仅看任务是否成功，还会考虑 `stderr`、结构化输出、`output_schema`、`constraints`、测试情况、scope 等因素。例如某些 CLI 会向 `stderr` 写环境信息，这会影响得分但不一定代表任务失败。
 
 ### 5. 修改了 `server.js` 后为什么 watcher 没生效？
 
@@ -328,6 +440,21 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 ### 7. 同一个 `task_id` 能重复派发吗？
 
 运行中的任务不允许同名重入，以避免 worktree 和分支互相覆盖。任务结束后可以再次使用该 `task_id`，但更推荐新任务使用新的唯一 ID。
+
+### 8. 任务为什么没有立刻开始执行？
+
+系统默认最多同时运行 4 个任务。超过上限的任务会进入队列等待空闲槽位，因此“未立刻启动”不一定是异常。
+
+### 9. `/cancel` 和 `/cleanup` 有什么区别？
+
+- `/cancel`：终止还在运行的任务进程，并标记为取消
+- `/cleanup`：删除任务相关工件文件和 worktree
+
+一般顺序是：先 `/cancel`，确认不再需要后再 `/cleanup`。
+
+### 10. 事件文件会不会无限增长？
+
+不会。事件文件超过 1MB 后会自动截断，只保留最近 100 行。实时观察请优先使用 `/watch`，长期归档请以结果文件和你自己的记录为准。
 
 ---
 
@@ -377,7 +504,7 @@ node --test --test-name-pattern="launchDispatch returns pending payload before a
 当你修改以下内容时，请同步更新文档：
 
 - `task-router` 工具行为
-- `/delegate`、`/watch`、`/repair`、`/merge` 的命令语义
+- `/delegate`、`/watch`、`/cancel`、`/repair`、`/history`、`/merge`、`/cleanup` 的命令语义
 - watcher 或 merge 流程
 
 ---

@@ -1,4 +1,4 @@
-export function buildPrepareMergePayload({ taskId, agent, strategy, bundle, patch = null }) {
+export function buildPrepareMergePayload({ taskId, agent, strategy, bundle, patch = null, diffStat = null }) {
   if (strategy === "patch") {
     if (!bundle?.result?.worktree_path) {
       return {
@@ -15,6 +15,8 @@ export function buildPrepareMergePayload({ taskId, agent, strategy, bundle, patc
       agent,
       strategy,
       patch_file: patch?.patch_file,
+      diff_stat: diffStat || bundle?.result?.artifacts?.git_diff_stat || "",
+      files_changed: bundle?.result?.artifacts?.git_diff_names || [],
       stdout: patch?.stdout || "",
       stderr: patch?.stderr || ""
     };
@@ -25,7 +27,9 @@ export function buildPrepareMergePayload({ taskId, agent, strategy, bundle, patc
     task_id: taskId,
     agent,
     strategy,
-    commit_sha: bundle?.result?.commit?.head_sha || ""
+    commit_sha: bundle?.result?.commit?.head_sha || "",
+    diff_stat: diffStat || bundle?.result?.artifacts?.git_diff_stat || "",
+    files_changed: bundle?.result?.artifacts?.git_diff_names || []
   };
 }
 
