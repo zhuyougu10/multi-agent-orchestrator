@@ -46,6 +46,7 @@ export function execCmd(command, args, cwd, extraEnv = {}, options = {}) {
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
         idleTerminated = true;
+        clearTimeout(timer);
         child.kill("SIGKILL");
       }, idleTimeoutMs);
     };

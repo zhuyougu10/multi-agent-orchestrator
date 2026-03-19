@@ -77,3 +77,56 @@ test("waitForEvents waits for future events until timeout expires", async () => 
   assert.equal(result.events.length, 1);
   assert.equal(result.events[0].event.event_type, "started");
 });
+
+test("wildcard subscriber receives events from all agents", async () => {
+  const hub = createTaskEventHub();
+  const stream = hub.subscribe("task-wild", null);
+
+  hub.publish({ task_id: "task-wild", agent: "codex", event_type: "started", timestamp: "2026-03-12T00:00:00.000Z" });
+  hub.publish({ task_id: "task-wild", agent: "gemini", event_type: "started", timestamp: "2026-03-12T00:00:01.000Z" });
+
+  const first = await stream.next();
+  const second = await stream.next();
+
+  assert.equal(first.value.agent, "codex");
+  assert.equal(second.value.agent, "gemini");
+});
+
+test("wildcard waitForEvents aggregates events from multiple agents", async () => {
+  const hub = createTaskEventHub();
+
+  hub.publish({ task_id: "task-wagg", agent: "codex", event_type: "started", timestamp: "2026-03-12T00:00:00.000Z" });
+  hub.publish({ task_id: "task-wagg", agent: "gemini", event_type: "heartbeat", timestamp: "2026-03-12T00:00:01.000Z" });
+
+  const result = await hub.waitForEvents("task-wagg", null, { cursor: 0, timeoutMs: 10 });
+
+  assert.equal(result.events.length, 2);
+  assert.equal(result.events[0].event.agent, "codex");
+  assert.equal(result.events[1].event.agent, "gemini");
+});
+
+test("history limit trims oldest events", () => {
+  const hub = createTaskEventHub({ historyLimit: 2 });
+
+  hub.publish({ task_id: "task-hl", agent: "codex", event_type: "started", timestamp: "t1" });
+  hub.publish({ task_id: "task-hl", agent: "codex", event_type: "heartbeat", timestamp: "t2" });
+  hub.publish({ task_id: "task-hl", agent: "codex", event_type: "heartbeat", timestamp: "t3" });
+
+  const result = hub.waitForEvents("task-hl", "codex", { cursor: 0, timeoutMs: 0 });
+  return result.then((payload) => {
+    // 只能看到最近 2 条（cursor 2 和 3），cursor 1 已被裁剪
+    assert.equal(payload.events.length, 2);
+    assert.equal(payload.events[0].cursor, 2);
+    assert.equal(payload.events[1].cursor, 3);
+  });
+});
+
+test("waitForEvents returns empty on timeout when no events arrive", async () => {
+  const hub = createTaskEventHub();
+
+  const result = await hub.waitForEvents("task-empty", "codex", { cursor: 0, timeoutMs: 50 });
+
+  assert.equal(result.events.length, 0);
+  assert.equal(result.next_cursor, 0);
+  assert.equal(result.done, false);
+});

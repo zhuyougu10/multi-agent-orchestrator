@@ -74,15 +74,17 @@ export function launchDispatch({ job, selectedAgent, mode, runners, writeResultI
 
       writeResultIndex(payload);
     } catch (error) {
-      writeResultIndex({
-        ok: false,
-        task_id: job.task_id,
-        selected_agent: selectedAgent,
-        mode,
-        status: "failed",
-        error: error?.message || String(error),
-        ...expectedFiles
-      });
+      try {
+        writeResultIndex({
+          ok: false,
+          task_id: job.task_id,
+          selected_agent: selectedAgent,
+          mode,
+          status: "failed",
+          error: error?.message || String(error),
+          ...expectedFiles
+        });
+      } catch {}
     }
   });
 

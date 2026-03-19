@@ -63,11 +63,16 @@ export function syncScopedFilesIntoExecutionPath(repoRoot, executionPath, filesS
   }
 }
 
+const EXCLUDED_DIRS = new Set([".git", "node_modules", ".hg", ".svn"]);
+
 function collectRepositoryFiles(rootPath, relativeBase = "") {
   const entries = fs.readdirSync(path.join(rootPath, relativeBase), { withFileTypes: true });
   const files = [];
 
   for (const entry of entries) {
+    if (entry.isDirectory() && EXCLUDED_DIRS.has(entry.name)) {
+      continue;
+    }
     const relativePath = path.join(relativeBase, entry.name);
     if (entry.isDirectory()) {
       files.push(...collectRepositoryFiles(rootPath, relativePath));

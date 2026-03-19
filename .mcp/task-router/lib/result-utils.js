@@ -101,17 +101,30 @@ export function shouldCommitWorktree(executionMode, artifacts) {
 }
 
 export function isRunSuccessful(run, parsedJsonOk = false) {
-  return (!run.timed_out && run.code === 0) || (!run.timed_out && run.idle_terminated && parsedJsonOk);
+  // idle_terminated 优先于 timed_out（Windows 上两者可能同时为 true）
+  if (run.idle_terminated && parsedJsonOk) return true;
+  return !run.timed_out && run.code === 0;
 }
 
 export function scoreRunStatus(result, parsedJsonOk = false) {
+  // idle_terminated 优先于 timed_out（Windows 上两者可能同时为 true）
+  const idleTerminated = result.idle_terminated ?? (result.exit_code === null && !result.timed_out);
+  if (idleTerminated) {
+    if (isRunSuccessful({ code: result.exit_code, timed_out: false, idle_terminated: true }, parsedJsonOk)) {
+      return { penalty: 0, notes: [] };
+    }
+    return {
+      penalty: 35,
+      notes: ["idle terminated without valid structured output"]
+    };
+  }
   if (result.timed_out) {
     return {
       penalty: 40,
       notes: ["command timed out"]
     };
   }
-  if (isRunSuccessful({ code: result.exit_code, timed_out: result.timed_out, idle_terminated: result.idle_terminated }, parsedJsonOk)) {
+  if (isRunSuccessful({ code: result.exit_code, timed_out: result.timed_out, idle_terminated: idleTerminated }, parsedJsonOk)) {
     return { penalty: 0, notes: [] };
   }
 

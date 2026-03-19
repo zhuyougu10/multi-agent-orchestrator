@@ -90,6 +90,80 @@ test("scoreRunStatus does not penalize idle-terminated parsed-json success", () 
   assert.deepEqual(scored.notes, []);
 });
 
+test("scoreRunStatus infers idle_terminated when exit_code is null and not timed out", () => {
+  // 旧版 result 没有 idle_terminated 字段，需要推断
+  const scored = scoreRunStatus(
+    { exit_code: null, timed_out: false },
+    true
+  );
+
+  assert.equal(scored.penalty, 0);
+  assert.deepEqual(scored.notes, []);
+});
+
+test("scoreRunStatus penalizes non-zero exit code without idle termination", () => {
+  const scored = scoreRunStatus(
+    { exit_code: 1, timed_out: false, idle_terminated: false },
+    true
+  );
+
+  assert.equal(scored.penalty, 35);
+  assert.deepEqual(scored.notes, ["command exit_code != 0"]);
+});
+
+test("scoreRunStatus penalizes timeout", () => {
+  const scored = scoreRunStatus(
+    { exit_code: null, timed_out: true },
+    true
+  );
+
+  assert.equal(scored.penalty, 40);
+  assert.deepEqual(scored.notes, ["command timed out"]);
+});
+
+test("isRunSuccessful handles Windows race where both timed_out and idle_terminated are true", () => {
+  // Windows 上 idle_terminated 和 timed_out 可能同时为 true
+  // idle_terminated 应优先
+  const ok = isRunSuccessful(
+    { code: null, timed_out: true, idle_terminated: true },
+    true
+  );
+
+  assert.equal(ok, true);
+});
+
+test("isRunSuccessful rejects Windows race when parsed json is not ok", () => {
+  const ok = isRunSuccessful(
+    { code: null, timed_out: true, idle_terminated: true },
+    false
+  );
+
+  assert.equal(ok, false);
+});
+
+test("scoreRunStatus handles Windows race with idle_terminated priority over timed_out", () => {
+  // 当 idle_terminated 和 timed_out 同时为 true 且有合法 JSON 输出时，
+  // 不应扣分（idle 终止是正常完成）
+  const scored = scoreRunStatus(
+    { exit_code: null, timed_out: true, idle_terminated: true },
+    true
+  );
+
+  assert.equal(scored.penalty, 0);
+  assert.deepEqual(scored.notes, []);
+});
+
+test("scoreRunStatus penalizes Windows race idle_terminated without valid output", () => {
+  // idle_terminated 但没有有效输出 → 35 分罚分（非硬超时的 40 分）
+  const scored = scoreRunStatus(
+    { exit_code: null, timed_out: true, idle_terminated: true },
+    false
+  );
+
+  assert.equal(scored.penalty, 35);
+  assert.deepEqual(scored.notes, ["idle terminated without valid structured output"]);
+});
+
 test("detectEvidenceConflicts flags mismatch between parsed failures and passing router tests", () => {
   const conflicts = detectEvidenceConflicts(
     {

@@ -31,6 +31,10 @@ export function ensureDirs() {
   }
 }
 
+export function jobsDir() {
+  return JOB_ROOT;
+}
+
 export function jobFile(taskId) {
   const id = sanitizeTaskId(taskId);
   return path.join(JOB_ROOT, `${id}.json`);

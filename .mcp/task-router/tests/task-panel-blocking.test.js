@@ -44,3 +44,56 @@ test("collectPanelSnapshotsUntilTerminal loops until all tasks are terminal", as
   assert.equal(result.panel_history[0], "panel 1");
   assert.equal(result.panel_text, "panel 2");
 });
+
+test("collectPanelSnapshotsUntilTerminal exits on maxRounds exceeded", async () => {
+  const runningSnapshot = {
+    tasks: [
+      { task_id: "x", agent: "codex", cursor: 1, status: "running", last_heartbeat_at: "t1", last_event_type: "heartbeat", started_at: "t0", finished_at: "", message: "" }
+    ],
+    summary: { total: 1, running: 1, completed: 0, failed: 0 },
+    all_terminal: false,
+    panel_text: "still running"
+  };
+
+  let callCount = 0;
+  const result = await collectPanelSnapshotsUntilTerminal(
+    [{ task_id: "x", agent: "codex", cursor: 0 }],
+    async () => {
+      callCount++;
+      return { ...runningSnapshot };
+    },
+    100,
+    { maxRounds: 3 }
+  );
+
+  assert.equal(callCount, 3);
+  assert.equal(result.all_terminal, false);
+  assert.equal(result.timeout_reason, "max_rounds_exceeded");
+  assert.equal(result.panel_history.length, 3);
+});
+
+test("collectPanelSnapshotsUntilTerminal exits on globalTimeoutMs exceeded", async () => {
+  const runningSnapshot = {
+    tasks: [
+      { task_id: "y", agent: "gemini", cursor: 1, status: "running", last_heartbeat_at: "t1", last_event_type: "heartbeat", started_at: "t0", finished_at: "", message: "" }
+    ],
+    summary: { total: 1, running: 1, completed: 0, failed: 0 },
+    all_terminal: false,
+    panel_text: "running"
+  };
+
+  const result = await collectPanelSnapshotsUntilTerminal(
+    [{ task_id: "y", agent: "gemini", cursor: 0 }],
+    async () => {
+      // 模拟每轮花费一些时间
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return { ...runningSnapshot };
+    },
+    100,
+    { maxRounds: 1000, globalTimeoutMs: 50 }
+  );
+
+  assert.equal(result.all_terminal, false);
+  assert.equal(result.timeout_reason, "global_timeout");
+  assert.ok(result.panel_history.length >= 1);
+});

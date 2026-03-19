@@ -9,6 +9,7 @@ import { buildArgs } from "./runner.js";
 import {
   ensureDirs,
   jobFile,
+  jobsDir,
   resultFile,
   scoreFile,
   bundleFile,
@@ -30,17 +31,19 @@ import {
 } from "./lib/result-utils.js";
 import { sanitizeTaskId } from "./lib/validation.js";
 import { AGENT_SCHEMA, OPTIONAL_AGENT_SCHEMA, PREFERRED_AGENT_SCHEMA, chooseAgent } from "./lib/agents.js";
+import { gitCommitAll } from "./lib/git.js";
 import { assertTaskNotActive } from "./lib/job-state.js";
 import { createTaskEventHub } from "./lib/task-events.js";
 import { matchesFilesScope } from "./lib/files-scope.js";
 import { buildCherryPickMergePayload, buildPatchMergePayload, buildPrepareMergePayload } from "./lib/merge-flow.js";
 import { resolveCollectedAgent, selectCollectedPayload } from "./lib/result-collection.js";
 import { buildPatchCommandArgs } from "./lib/merge-utils.js";
-import { applyTaskEvents, collectPanelSnapshotsUntilTerminal, createTaskPanelState, allTasksTerminal, renderTaskPanel, summarizeTaskPanel, updateTaskPanelState } from "./lib/task-panel.js";
+import { collectPanelSnapshotsUntilTerminal, createTaskPanelState, updateTaskPanelState } from "./lib/task-panel.js";
 
 ensureDirs();
 
 const HEARTBEAT_INTERVAL_MS = 5000;
+const DEFAULT_IDLE_TIMEOUT_MS = 3000;
 const taskEventHub = createTaskEventHub();
 
 function nowIso() {
@@ -165,11 +168,6 @@ async function runTests(cwd, command) {
   };
 }
 
-async function gitCommitAll(cwd, message) {
-  await execCmd("git", ["add", "-A"], cwd, {}, { shell: true });
-  return execCmd("git", ["commit", "-m", message], cwd, {}, { shell: true });
-}
-
 async function getHeadSha(cwd) {
   const res = await execCmd("git", ["rev-parse", "HEAD"], cwd, {}, { shell: true });
   return {
@@ -270,6 +268,44 @@ async function abortCherryPick(cwd) {
   return execCmd("git", ["cherry-pick", "--abort"], cwd, {}, { shell: true });
 }
 
+function buildEarlyFailureResult({ taskId, agent, cwd, executionContext, stderrMessage }) {
+  return {
+    ok: false,
+    task_id: taskId,
+    agent,
+    cwd,
+    execution_mode: executionContext.mode || "unknown",
+    worktree_path: executionContext.path || "",
+    worktree_branch: executionContext.branch || "",
+    exit_code: 1,
+    timed_out: false,
+    idle_terminated: false,
+    started_at: nowIso(),
+    finished_at: nowIso(),
+    stdout: "",
+    stderr: stderrMessage,
+    tests: {
+      attempted: false,
+      exit_code: null,
+      stdout: "",
+      stderr: ""
+    },
+    artifacts: {
+      git_status: "",
+      git_diff_stat: "",
+      git_diff: "",
+      git_diff_names: []
+    },
+    commit: {
+      attempted: false,
+      exit_code: null,
+      stdout: "",
+      stderr: "",
+      head_sha: ""
+    }
+  };
+}
+
 async function runInWorktree(job, agent) {
   const safeTaskId = sanitizeTaskId(job.task_id);
   const executionContext = await resolveExecutionContext(
@@ -284,40 +320,13 @@ async function runInWorktree(job, agent) {
       phase: "setup",
       message: executionContext.stderr || "worktree creation failed"
     });
-    const failed = {
-      ok: false,
-      task_id: safeTaskId,
+    const failed = buildEarlyFailureResult({
+      taskId: safeTaskId,
       agent,
       cwd: job.cwd,
-      execution_mode: executionContext.mode || "unknown",
-      worktree_path: executionContext.path || "",
-      worktree_branch: executionContext.branch || "",
-      exit_code: 1,
-      timed_out: false,
-      started_at: nowIso(),
-      finished_at: nowIso(),
-      stdout: "",
-      stderr: `worktree creation failed\n${executionContext.stderr || ""}`,
-      tests: {
-        attempted: false,
-        exit_code: null,
-        stdout: "",
-        stderr: ""
-      },
-      artifacts: {
-        git_status: "",
-        git_diff_stat: "",
-        git_diff: "",
-        git_diff_names: []
-      },
-      commit: {
-        attempted: false,
-        exit_code: null,
-        stdout: "",
-        stderr: "",
-        head_sha: ""
-      }
-    };
+      executionContext,
+      stderrMessage: `worktree creation failed\n${executionContext.stderr || ""}`
+    });
     writeJsonAtomic(resultFile(safeTaskId, agent), failed);
     return failed;
   }
@@ -334,40 +343,13 @@ async function runInWorktree(job, agent) {
       phase: "build_args",
       message: err.message
     });
-    const failed = {
-      ok: false,
-      task_id: safeTaskId,
+    const failed = buildEarlyFailureResult({
+      taskId: safeTaskId,
       agent,
       cwd: job.cwd,
-      execution_mode: executionContext.mode || "unknown",
-      worktree_path: executionContext.path || "",
-      worktree_branch: executionContext.branch || "",
-      exit_code: 1,
-      timed_out: false,
-      started_at: nowIso(),
-      finished_at: nowIso(),
-      stdout: "",
-      stderr: `buildArgs failed: ${err.message}`,
-      tests: {
-        attempted: false,
-        exit_code: null,
-        stdout: "",
-        stderr: ""
-      },
-      artifacts: {
-        git_status: "",
-        git_diff_stat: "",
-        git_diff: "",
-        git_diff_names: []
-      },
-      commit: {
-        attempted: false,
-        exit_code: null,
-        stdout: "",
-        stderr: "",
-        head_sha: ""
-      }
-    };
+      executionContext,
+      stderrMessage: `buildArgs failed: ${err.message}`
+    });
     writeJsonAtomic(resultFile(safeTaskId, agent), failed);
     return failed;
   }
@@ -401,7 +383,7 @@ async function runInWorktree(job, agent) {
         });
       },
       timeoutMs: job.timeout_ms,
-      idleTimeoutMs: 3000
+      idleTimeoutMs: job.idle_timeout_ms ?? DEFAULT_IDLE_TIMEOUT_MS
     }
   );
   clearInterval(heartbeat);
@@ -430,7 +412,7 @@ async function runInWorktree(job, agent) {
   const commitMessage = `agent(${safeTaskId}): ${agent} result`;
   const shouldCommit = shouldCommitWorktree(executionContext.mode, artifacts);
   const commit = shouldCommit
-    ? await gitCommitAll(executionContext.path, commitMessage)
+    ? await gitCommitAll(execCmd, executionContext.path, commitMessage)
     : { code: null, stdout: "", stderr: "", timed_out: false };
 
   const head = shouldCommit
@@ -453,6 +435,7 @@ async function runInWorktree(job, agent) {
     worktree_branch: executionContext.mode === "worktree" ? executionContext.branch : "",
     exit_code: run.code,
     timed_out: run.timed_out,
+    idle_terminated: run.idle_terminated || false,
     started_at: startedAt,
     finished_at: nowIso(),
     stdout: normalizedOutput.stdout,
@@ -541,12 +524,17 @@ async function runRace(job) {
   const results = await Promise.all(agents.map((agent) => runSingle(job, agent)));
 
   const scored = results.map((r) => {
+    const file = scoreFile(job.task_id, r.agent);
+    if (exists(file)) {
+      return readJson(file);
+    }
+    // 回退：如果分数文件不存在（不应发生），重新计算
     const s = computeScore({
       result: r,
       outputSchema: job.output_schema,
       filesScope: job.files_scope
     });
-    const payload = {
+    return {
       task_id: job.task_id,
       agent: r.agent,
       score: s.score,
@@ -556,8 +544,6 @@ async function runRace(job) {
       scope_ok: s.scope_ok,
       out_of_scope_files: s.out_of_scope_files
     };
-    writeJsonAtomic(scoreFile(job.task_id, r.agent), payload);
-    return payload;
   });
 
   scored.sort((a, b) => b.score - a.score);
@@ -886,12 +872,12 @@ server.tool(
   "list_jobs",
   {},
   async () => {
-    const jobsDir = path.dirname(jobFile("placeholder")).replace(/[\\/]placeholder\.json$/, "");
-    const files = fs.existsSync(jobsDir)
-      ? fs.readdirSync(jobsDir).filter((f) => f.endsWith(".json"))
+    const dir = jobsDir();
+    const files = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter((f) => f.endsWith(".json"))
       : [];
     const jobs = files.map((file) => {
-      const full = path.join(jobsDir, file);
+      const full = path.join(dir, file);
       try {
         return readJson(full);
       } catch {
@@ -1062,3 +1048,13 @@ server.tool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+async function gracefulShutdown() {
+  try {
+    await server.close();
+  } catch {}
+  process.exit(0);
+}
+
+process.on("SIGINT", gracefulShutdown);
+process.on("SIGTERM", gracefulShutdown);
