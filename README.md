@@ -174,6 +174,88 @@ cd .mcp/task-router
 npm install
 ```
 
+### 2.5 一键初始化（推荐）
+
+如果你只是想快速完成项目初始化，而不自动修改系统环境，可以直接运行仓库内置脚本。
+
+Windows PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1
+```
+
+Linux / macOS：
+
+```bash
+sh ./scripts/bootstrap.sh
+```
+
+脚本会完成：
+
+- 检查 `node` / `npm` / `git`
+- 校验 Node.js 版本是否 `>= 18`
+- 检查 `opencode` / `codex` / `gemini` 是否在 `PATH`
+- 安装 `.mcp/task-router` 依赖
+- 输出下一步启动命令
+
+说明：
+
+- 这是**安全版初始化脚本**，不会自动安装全局 CLI，也不会修改你的系统配置。
+- 如果 `opencode`、`codex`、`gemini` 缺失，脚本会给出警告，但仍会完成仓库依赖安装。
+
+### 2.6 远程安装到现有项目或新项目
+
+如果你不想先克隆本仓库，而是想在**任意现有项目**或**新目录**里直接接入本项目的 `task-router` 能力，可以使用远程安装脚本。
+
+安装内容包括：
+
+- `.mcp/task-router/`
+- `.opencode/commands/`
+- `.opencode/opencode.json`
+- 必要的 `.gitignore` 条目
+
+脚本行为：
+
+- 检查 `node >= 18`、`npm`、`git`
+- 从 GitHub 下载当前仓库的安装包
+- 将受管路径复制到目标项目
+- 如果目标路径已存在，先自动备份为 `*.bak.<timestamp>`
+- 在目标项目的 `.mcp/task-router` 中执行 `npm install`
+
+在**当前目录**接入（适用于已有项目）：
+
+Windows PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "iwr https://raw.githubusercontent.com/zhuyougu10/multi-agent-orchestrator/master/install.ps1 -UseBasicParsing | iex"
+```
+
+Linux / macOS：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhuyougu10/multi-agent-orchestrator/master/install.sh | sh
+```
+
+在**指定新目录**中创建并接入：
+
+Windows PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((iwr https://raw.githubusercontent.com/zhuyougu10/multi-agent-orchestrator/master/install.ps1 -UseBasicParsing).Content)) my-new-project"
+```
+
+Linux / macOS：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhuyougu10/multi-agent-orchestrator/master/install.sh | sh -s -- my-new-project
+```
+
+说明：
+
+- 远程安装脚本只管理集成相关路径，不会覆盖你的业务代码。
+- 如果目标项目已有 `.mcp/task-router`、`.opencode/commands` 或 `.opencode/opencode.json`，会先备份再替换。
+- 这是项目内集成，不会修改系统级全局配置。
+
 ### 3. 检查 OpenCode 配置
 
 项目已内置 `.opencode/opencode.json`，默认会把本地 `task-router` 注册为 MCP 服务，通常不需要额外修改。
@@ -204,6 +286,12 @@ npm start
 ```
 
 启动后，在当前仓库目录中打开 OpenCode，即可自动加载 `task-router` MCP 工具。
+
+如果你刚完成初始化，推荐顺序是：
+
+1. 运行 `scripts/bootstrap.ps1` 或 `scripts/bootstrap.sh`
+2. 启动 `task-router`
+3. 在当前仓库中打开 OpenCode
 
 ### 启动本地 watcher 面板
 
