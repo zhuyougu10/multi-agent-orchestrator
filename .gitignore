@@ -6,5 +6,8 @@
 demo-project/
 demo-parallel-project/
 
+# 项目级代理说明（本地维护，不纳入版本控制）
+AGENTS.md
+
 # Windows 空文件
 nul
