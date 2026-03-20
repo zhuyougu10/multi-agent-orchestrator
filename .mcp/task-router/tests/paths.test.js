@@ -12,6 +12,7 @@ import {
   worktreePath,
   patchDir,
   taskEventFile,
+  watchEventSocketPath,
   JOB_ROOT,
   RESULT_ROOT,
   SCORE_ROOT,
@@ -68,6 +69,17 @@ test("patchDir returns patch directory path", () => {
 test("taskEventFile returns event file path", () => {
   const result = taskEventFile("task-1");
   assert.equal(result, path.join(EVENT_ROOT, "task-1.jsonl"));
+});
+
+test("watchEventSocketPath returns local watcher socket path", () => {
+  const result = watchEventSocketPath();
+
+  if (process.platform === "win32") {
+    assert.match(result, /^\\\\\.\\pipe\\task-router-watch-events-[a-f0-9]{8}$/);
+    return;
+  }
+
+  assert.equal(result, path.join(EVENT_ROOT, "watch-events.sock"));
 });
 
 test("path builders reject invalid task ids", () => {

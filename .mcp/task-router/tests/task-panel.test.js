@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 
 import {
   createTaskPanelState,
-  updateTaskPanelState,
   applyTaskEvents,
   allTasksTerminal,
   renderTaskPanel
@@ -102,42 +101,126 @@ test("renderTaskPanel prints summary counts and task rows", () => {
 
   const panel = renderTaskPanel(state);
 
-  assert.match(panel, /Tasks: 2 total \| running: 1 \| completed: 0 \| failed: 1/);
-  assert.match(panel, /task-e \| codex \| running/);
-  assert.match(panel, /task-f \| gemini \| failed/);
+  assert.match(panel, /任务: 2 \| 运行中: 1 \| 测试中: 0 \| 已完成: 0 \| 失败: 1/);
+  assert.match(panel, /task-e \| codex \| 运行中/);
+  assert.match(panel, /task-f \| gemini \| 失败/);
 });
 
-test("updateTaskPanelState waits for task events in parallel", async () => {
+test("transient stdout and stderr events do not replace panel stage label", () => {
   const state = createTaskPanelState([
-    { task_id: "task-a", agent: "codex", cursor: 0 },
-    { task_id: "task-b", agent: "gemini", cursor: 0 }
+    { task_id: "task-noise", agent: "codex", cursor: 0 }
   ]);
-  const started = [];
-  const release = [];
 
-  const waitForTask = ({ task_id }) => new Promise((resolve) => {
-    started.push(task_id);
-    release.push(() => resolve({
-      events: [{
-        cursor: 1,
-        event: {
-          task_id,
-          event_type: "completed",
-          timestamp: `ts-${task_id}`
-        }
-      }]
-    }));
-  });
+  applyTaskEvents(state, "task-noise", "codex", [
+    {
+      cursor: 1,
+      event: {
+        task_id: "task-noise",
+        agent: "codex",
+        event_type: "started",
+        timestamp: "2026-03-20T00:00:00.000Z"
+      }
+    },
+    {
+      cursor: 2,
+      event: {
+        task_id: "task-noise",
+        agent: "codex",
+        event_type: "stdout",
+        timestamp: "2026-03-20T00:00:01.000Z"
+      }
+    },
+    {
+      cursor: 3,
+      event: {
+        task_id: "task-noise",
+        agent: "codex",
+        event_type: "stderr",
+        timestamp: "2026-03-20T00:00:02.000Z"
+      }
+    }
+  ]);
 
-  const pending = updateTaskPanelState(state, waitForTask);
+  const panel = renderTaskPanel(state);
 
-  await Promise.resolve();
+  assert.match(panel, /task-noise \| codex \| 运行中 \| .* \| 已启动/);
+});
 
-  assert.deepEqual(started.sort(), ["task-a", "task-b"]);
+test("tests_started and tests_completed are summarized as testing phase", () => {
+  const state = createTaskPanelState([
+    { task_id: "task-test-phase", agent: "gemini", cursor: 0 }
+  ]);
 
-  release.splice(0).forEach((resolve) => resolve());
-  await pending;
+  applyTaskEvents(state, "task-test-phase", "gemini", [
+    {
+      cursor: 1,
+      event: {
+        task_id: "task-test-phase",
+        agent: "gemini",
+        event_type: "tests_started",
+        timestamp: "2026-03-20T00:00:03.000Z"
+      }
+    }
+  ]);
+  let panel = renderTaskPanel(state);
+  assert.match(panel, /task-test-phase \| gemini \| 测试中 \| .* \| 测试中/);
 
-  assert.equal(state.tasks[0].status, "completed");
-  assert.equal(state.tasks[1].status, "completed");
+  applyTaskEvents(state, "task-test-phase", "gemini", [
+    {
+      cursor: 2,
+      event: {
+        task_id: "task-test-phase",
+        agent: "gemini",
+        event_type: "tests_completed",
+        timestamp: "2026-03-20T00:00:04.000Z"
+      }
+    }
+  ]);
+  panel = renderTaskPanel(state);
+  assert.match(panel, /task-test-phase \| gemini \| 测试中 \| .* \| 测试中/);
+});
+
+test("summarizeTaskPanel counts testing tasks separately", () => {
+  const state = createTaskPanelState([
+    { task_id: "task-testing", agent: "gemini", cursor: 0 }
+  ]);
+
+  applyTaskEvents(state, "task-testing", "gemini", [
+    {
+      cursor: 1,
+      event: {
+        task_id: "task-testing",
+        agent: "gemini",
+        event_type: "tests_started",
+        timestamp: "2026-03-20T00:00:03.000Z"
+      }
+    }
+  ]);
+
+  const panel = renderTaskPanel(state);
+
+  assert.match(panel, /任务: 1 \| 运行中: 0 \| 测试中: 1 \| 已完成: 0 \| 失败: 0/);
+});
+
+test("failed tasks include a short error summary in the panel", () => {
+  const state = createTaskPanelState([
+    { task_id: "task-fail-summary", agent: "codex", cursor: 0 }
+  ]);
+
+  applyTaskEvents(state, "task-fail-summary", "codex", [
+    {
+      cursor: 1,
+      event: {
+        task_id: "task-fail-summary",
+        agent: "codex",
+        event_type: "failed",
+        timestamp: "2026-03-20T00:00:05.000Z",
+        message: "something went very wrong in the worker process and needs attention immediately"
+      }
+    }
+  ]);
+
+  const panel = renderTaskPanel(state);
+
+  assert.match(panel, /task-fail-summary \| codex \| 失败 \| .* \| 失败 \| something went very wrong/);
 });

@@ -128,6 +128,7 @@ try {
   Write-Host "1. cd `"$targetRoot`""
   Write-Host "2. node .mcp/task-router/server.js"
   Write-Host "3. Open OpenCode in that project"
+  Write-Host "4. Monitor tasks with: node .mcp/task-router/watch-ui.js <task_id>"
 } finally {
   if (Test-Path $tmpRoot) {
     Remove-Item -LiteralPath $tmpRoot -Recurse -Force

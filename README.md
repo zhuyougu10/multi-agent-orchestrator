@@ -58,6 +58,8 @@
 
 项目内置 `watch-ui.js`，可在当前终端中维护一个固定面板，并在同一块区域内显示一个或多个任务的状态变化。
 
+watcher 启动时会先读取一次已有事件文件恢复初始状态，随后完全依赖 `task-router` 服务主动推送的新事件刷新面板，不再自行定时轮询。
+
 这适用于你不希望在模型会话中反复刷屏，而是想看一个持续更新的本地面板的场景。
 
 ### 3. 任务结果收集与评分
@@ -221,6 +223,7 @@ sh ./scripts/bootstrap.sh
 - 将受管路径复制到目标项目
 - 如果目标路径已存在，先自动备份为 `*.bak.<timestamp>`
 - 在目标项目的 `.mcp/task-router` 中执行 `npm install`
+- 安装完成后提示使用 `watch-ui.js` 作为任务观察入口
 
 在**当前目录**接入（适用于已有项目）：
 
@@ -368,7 +371,10 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 
 - 在当前终端直接运行 `watch-ui.js`
 - 使用一个固定面板显示多个任务状态
+- 由 `task-router` 服务主动推送任务事件到 watcher
 - 不再在模型会话里重复输出大量轮询文本
+
+注意：`watch-ui.js` 依赖本地 `task-router` 服务在线；如果服务未启动或中途重启，watcher 会断开并退出。
 
 如果任务长时间没有心跳或明显卡死，建议先结合 `idle_timeout_ms` 判断，再使用 `/cancel` 终止任务。
 
@@ -481,8 +487,6 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 | `dispatch_task` | 派发任务到 Codex 或 Gemini |
 | `collect_result` | 收集已完成任务的真实结果 |
 | `subscribe_task_events` | 订阅单任务事件流 |
-| `watch_task_group` | 获取一组任务的实时面板快照 |
-| `watch_task_group_blocking` | 阻塞直到任务组终态 |
 | `score_result` | 对任务结果评分 |
 | `retry_task` | 使用修复说明重试任务 |
 | `cancel_task` | 取消运行中的任务 |
@@ -499,7 +503,7 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 
 ### 1. 为什么 `/watch` 不再推荐在会话里轮询输出？
 
-因为轮询式输出会持续占用模型会话上下文，并且在长任务场景下容易产生大量无意义文本。当前推荐使用 `watch-ui.js` 在本地终端显示固定面板。
+因为轮询式输出会持续占用模型会话上下文，并且在长任务场景下容易产生大量无意义文本。当前推荐使用 `watch-ui.js` 在本地终端显示固定面板，并由 `task-router` 主动推送事件到 watcher。
 
 ### 2. 为什么 watcher 看起来像“刷屏”？
 
@@ -519,7 +523,7 @@ node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
 
 ### 5. 修改了 `server.js` 后为什么 watcher 没生效？
 
-因为 OpenCode 连接的 MCP 服务通常是已经启动的旧进程。修改 `server.js` 后，需要重启本地 `task-router` 服务。
+因为 OpenCode 连接的 MCP 服务通常是已经启动的旧进程，而 watcher 的实时更新现在依赖这个服务进程内的推送通道。修改 `server.js` 后，需要重启本地 `task-router` 服务。
 
 ### 6. `files_scope` 支持 glob 吗？
 

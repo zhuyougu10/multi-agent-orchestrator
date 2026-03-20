@@ -97,6 +97,31 @@ test("buildTaskHistory counts failed tasks correctly", () => {
   assert.equal(history.agent_stats.codex.wins, 0);
 });
 
+test("buildTaskHistory counts cancelled tasks correctly", () => {
+  const { jobsDir, scoresDir, resultsDir } = makeTempDirs();
+
+  fs.writeFileSync(
+    path.join(jobsDir, "task-c.json"),
+    JSON.stringify({
+      task_id: "task-c",
+      task_type: "docs",
+      mode: "single",
+      selected_agent: "gemini",
+      created_at: "2024-01-03T00:00:00Z"
+    })
+  );
+
+  fs.writeFileSync(
+    path.join(resultsDir, "task-c.json"),
+    JSON.stringify({ ok: false, status: "cancelled", selected_agent: "gemini", cancelled_at: "2024-01-03T00:01:00Z" })
+  );
+
+  const history = buildTaskHistory(jobsDir, scoresDir, resultsDir);
+
+  assert.equal(history.status_counts.cancelled, 1);
+  assert.equal(history.tasks[0].status, "cancelled");
+});
+
 test("buildTaskHistory handles non-existent directories", () => {
   const history = buildTaskHistory("/nonexistent/jobs", "/nonexistent/scores", "/nonexistent/results");
 

@@ -66,3 +66,45 @@ test("launchDispatch records failure payload when runner throws", async () => {
   assert.equal(writes.at(-1).ok, false);
   assert.match(writes.at(-1).error, /boom/);
 });
+
+test("launchDispatch preserves cancelled status written during execution", async () => {
+  const writes = [];
+  let currentIndex = null;
+  let resolveRun;
+
+  launchDispatch({
+    job: { task_id: "task-cancelled", mode: "single" },
+    selectedAgent: "gemini",
+    mode: "single",
+    runners: {
+      runSingle: () => new Promise((resolve) => {
+        resolveRun = resolve;
+      })
+    },
+    writeResultIndex: (payload) => {
+      currentIndex = payload;
+      writes.push(payload);
+    },
+    readResultIndex: () => currentIndex,
+    paths: {
+      resultFile: (taskId, agent = null) => agent ? `${taskId}.${agent}.json` : `${taskId}.json`,
+      bundleFile: (taskId, agent) => `${taskId}.${agent}.bundle.json`
+    },
+    alternateAgent: () => "codex"
+  });
+
+  await flush();
+  currentIndex = {
+    ...currentIndex,
+    status: "cancelled",
+    ok: false,
+    cancelled_at: "2026-03-20T12:00:00.000Z"
+  };
+
+  resolveRun({ ok: false, agent: "gemini" });
+  await flush();
+
+  assert.equal(writes.at(-1).status, "cancelled");
+  assert.equal(writes.at(-1).ok, false);
+  assert.equal(writes.at(-1).cancelled_at, "2026-03-20T12:00:00.000Z");
+});

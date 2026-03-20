@@ -2,7 +2,7 @@
 description: Run watch-ui in the current terminal
 ---
 
-Run `watch-ui.js` directly in the current terminal so one fixed panel can render multiple tasks in place without the model repeatedly printing panel snapshots.
+Run `watch-ui.js` directly in the current terminal so one fixed panel can render multiple tasks in place without the model repeatedly printing panel snapshots. The watcher now relies on `task-router` to push task events in real time instead of polling for updates.
 
 ## Steps
 
@@ -18,7 +18,8 @@ Run `watch-ui.js` directly in the current terminal so one fixed panel can render
    node .mcp/task-router/watch-ui.js task-001 task-002:gemini task-003
    ```
 4. The watcher should own the terminal while it is running. Do not print extra progress text before it exits.
-5. After the watcher exits, summarize terminal outcomes if needed.
+5. Make sure the local `task-router` service is already running; otherwise the watcher cannot receive pushed events.
+6. After the watcher exits, summarize terminal outcomes if needed.
 
 ## If a task is stuck
 
@@ -26,6 +27,12 @@ If a task appears stuck (no heartbeat for a long time, or running far beyond exp
 
 - Suggest the user run `/cancel <task_id>` to kill the running agent process.
 - The watcher will reflect the cancelled state once the process terminates.
+
+## Push model notes
+
+- `watch-ui.js` reads existing event files once on startup to recover current state.
+- After startup it only consumes events pushed from the running `task-router` service.
+- If the service stops or restarts, the watcher exits instead of silently falling back to polling.
 
 ## Manual fallback
 

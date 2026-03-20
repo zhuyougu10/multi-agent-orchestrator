@@ -12,6 +12,50 @@ function createTaskRecord(task) {
   };
 }
 
+function displayEventType(eventType, previousType) {
+  if (!eventType) {
+    return previousType;
+  }
+
+  if (eventType === "tests_started" || eventType === "tests_completed") {
+    return "testing";
+  }
+
+  if (eventType === "stdout" || eventType === "stderr") {
+    return previousType;
+  }
+
+  return eventType;
+}
+
+function displayStatus(status) {
+  if (status === "completed") return "已完成";
+  if (status === "failed") return "失败";
+  if (status === "testing") return "测试中";
+  return "运行中";
+}
+
+function displayStage(stage) {
+  if (stage === "dispatched") return "已派发";
+  if (stage === "started") return "已启动";
+  if (stage === "heartbeat") return "执行中";
+  if (stage === "testing") return "测试中";
+  if (stage === "completed") return "已完成";
+  if (stage === "failed") return "失败";
+  return stage || "-";
+}
+
+function shortMessage(message = "") {
+  const normalized = String(message || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.length <= 40) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 37)}...`;
+}
+
 export function createTaskPanelState(tasks = []) {
   return {
     tasks: tasks.map(createTaskRecord)
@@ -32,7 +76,7 @@ export function applyTaskEvents(state, taskId, agent, events = []) {
   for (const record of events) {
     task.cursor = Math.max(task.cursor, record.cursor ?? task.cursor);
     const event = record.event || {};
-    task.last_event_type = event.event_type || task.last_event_type;
+    task.last_event_type = displayEventType(event.event_type, task.last_event_type);
     if (event.timestamp && !task.started_at) {
       task.started_at = event.timestamp;
     }
@@ -43,6 +87,11 @@ export function applyTaskEvents(state, taskId, agent, events = []) {
     if (event.event_type === "started") {
       task.started_at = event.timestamp || task.started_at;
       task.status = "running";
+    }
+    if (event.event_type === "tests_started" || event.event_type === "tests_completed") {
+      task.status = task.status === "running" || task.status === "testing"
+        ? "testing"
+        : task.status;
     }
     if (event.event_type === "completed" || event.event_type === "failed") {
       task.status = event.event_type;
@@ -64,12 +113,14 @@ export function summarizeTaskPanel(state) {
   const summary = {
     total: state.tasks.length,
     running: 0,
+    testing: 0,
     completed: 0,
     failed: 0
   };
   for (const task of state.tasks) {
     if (task.status === "completed") summary.completed += 1;
     else if (task.status === "failed") summary.failed += 1;
+    else if (task.status === "testing") summary.testing += 1;
     else summary.running += 1;
   }
   return summary;
@@ -78,70 +129,23 @@ export function summarizeTaskPanel(state) {
 export function renderTaskPanel(state) {
   const summary = summarizeTaskPanel(state);
   const lines = [
-    `Tasks: ${summary.total} total | running: ${summary.running} | completed: ${summary.completed} | failed: ${summary.failed}`,
+    `任务: ${summary.total} | 运行中: ${summary.running} | 测试中: ${summary.testing} | 已完成: ${summary.completed} | 失败: ${summary.failed}`,
     ""
   ];
   for (const task of state.tasks) {
     const heartbeat = task.last_heartbeat_at || task.finished_at || "-";
-    lines.push(`${task.task_id} | ${task.agent || "-"} | ${task.status} | ${heartbeat} | ${task.last_event_type}`);
+    const errorSummary = task.status === "failed" ? shortMessage(task.message) : "";
+    const row = [
+      task.task_id,
+      task.agent || "-",
+      displayStatus(task.status),
+      heartbeat,
+      displayStage(task.last_event_type)
+    ];
+    if (errorSummary) {
+      row.push(errorSummary);
+    }
+    lines.push(row.join(" | "));
   }
   return lines.join("\n");
-}
-
-export async function updateTaskPanelState(state, waitForTask) {
-  await Promise.all(state.tasks.map(async (task) => {
-    const payload = await waitForTask(task);
-    applyTaskEvents(state, task.task_id, task.agent, payload.events);
-  }));
-
-  return {
-    tasks: state.tasks,
-    summary: summarizeTaskPanel(state),
-    all_terminal: allTasksTerminal(state),
-    panel_text: renderTaskPanel(state)
-  };
-}
-
-export async function collectPanelSnapshotsUntilTerminal(tasks, watcher, waitMs, options = {}) {
-  const { maxRounds = 120, globalTimeoutMs = 0 } = options;
-  let currentTasks = tasks.map((task) => ({ ...task }));
-  const panelHistory = [];
-  let latest = null;
-  let rounds = 0;
-  const startTime = Date.now();
-
-  while (true) {
-    rounds++;
-    if (maxRounds > 0 && rounds > maxRounds) {
-      return {
-        all_terminal: latest?.all_terminal ?? false,
-        tasks: latest?.tasks ?? currentTasks,
-        panel_text: latest?.panel_text ?? "",
-        panel_history: panelHistory,
-        timeout_reason: "max_rounds_exceeded"
-      };
-    }
-    if (globalTimeoutMs > 0 && Date.now() - startTime > globalTimeoutMs) {
-      return {
-        all_terminal: latest?.all_terminal ?? false,
-        tasks: latest?.tasks ?? currentTasks,
-        panel_text: latest?.panel_text ?? "",
-        panel_history: panelHistory,
-        timeout_reason: "global_timeout"
-      };
-    }
-    latest = await watcher({ tasks: currentTasks, waitMs });
-    panelHistory.push(latest.panel_text);
-    if (latest.all_terminal) {
-      return {
-        ...latest,
-        panel_history: panelHistory
-      };
-    }
-    currentTasks = latest.tasks.map((task) => ({
-      task_id: task.task_id,
-      agent: task.agent,
-      cursor: task.cursor
-    }));
-  }
 }

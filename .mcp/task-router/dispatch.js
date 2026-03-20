@@ -20,7 +20,25 @@ function buildExpectedFiles(taskId, mode, selectedAgent, paths, alternateAgent) 
   };
 }
 
-export function launchDispatch({ job, selectedAgent, mode, runners, writeResultIndex, paths, alternateAgent }) {
+function preserveTerminalOverride(payload, readResultIndex) {
+  if (typeof readResultIndex !== "function") {
+    return payload;
+  }
+
+  const current = readResultIndex();
+  if (current?.status === "cancelled") {
+    return {
+      ...payload,
+      ok: false,
+      status: "cancelled",
+      cancelled_at: current.cancelled_at
+    };
+  }
+
+  return payload;
+}
+
+export function launchDispatch({ job, selectedAgent, mode, runners, writeResultIndex, readResultIndex, paths, alternateAgent }) {
   const expectedFiles = buildExpectedFiles(job.task_id, mode, selectedAgent, paths, alternateAgent);
   const pending = {
     ok: true,
@@ -72,7 +90,7 @@ export function launchDispatch({ job, selectedAgent, mode, runners, writeResultI
         };
       }
 
-      writeResultIndex(payload);
+      writeResultIndex(preserveTerminalOverride(payload, readResultIndex));
     } catch (error) {
       try {
         writeResultIndex({

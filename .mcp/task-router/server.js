@@ -34,10 +34,10 @@ import { AGENT_SCHEMA, OPTIONAL_AGENT_SCHEMA, PREFERRED_AGENT_SCHEMA, chooseAgen
 import { gitCommitAll } from "./lib/git.js";
 import { assertTaskNotActive } from "./lib/job-state.js";
 import { createTaskEventHub } from "./lib/task-events.js";
+import { createWatchEventBroadcaster } from "./lib/watch-events-socket.js";
 import { buildCherryPickMergePayload, buildPatchMergePayload, buildPrepareMergePayload } from "./lib/merge-flow.js";
 import { resolveCollectedAgent, selectCollectedPayload } from "./lib/result-collection.js";
 import { buildPatchCommandArgs } from "./lib/merge-utils.js";
-import { collectPanelSnapshotsUntilTerminal, createTaskPanelState, updateTaskPanelState } from "./lib/task-panel.js";
 import { registerProcess, unregisterProcess, cancelAllForTask, listActiveProcesses } from "./lib/process-registry.js";
 import { assertCanRetry, incrementRetryCount } from "./lib/retry-guard.js";
 import { buildTaskHistory } from "./lib/task-history.js";
@@ -50,6 +50,29 @@ ensureDirs();
 const HEARTBEAT_INTERVAL_MS = 5000;
 const DEFAULT_IDLE_TIMEOUT_MS = 3000;
 const taskEventHub = createTaskEventHub();
+const watchEventBroadcaster = createWatchEventBroadcaster();
+const taskEventCursors = new Map();
+
+await watchEventBroadcaster.listen();
+
+let watchBroadcasterClosed = false;
+
+async function closeWatchEventBroadcaster() {
+  if (watchBroadcasterClosed) {
+    return;
+  }
+
+  watchBroadcasterClosed = true;
+  await watchEventBroadcaster.close();
+}
+
+process.once("beforeExit", () => closeWatchEventBroadcaster().catch(() => {}));
+process.once("SIGINT", () => {
+  closeWatchEventBroadcaster().finally(() => process.exit(130));
+});
+process.once("SIGTERM", () => {
+  closeWatchEventBroadcaster().finally(() => process.exit(143));
+});
 
 function nowIso() {
   return new Date().toISOString();
@@ -59,9 +82,12 @@ let publishCounter = 0;
 const EVENT_ROTATION_INTERVAL = 50; // 每 50 次发布检查一次事件文件大小
 
 function publishTaskEvent(taskId, agent, eventType, details = {}) {
+  const nextCursor = (taskEventCursors.get(taskId) || 0) + 1;
+  taskEventCursors.set(taskId, nextCursor);
   const event = {
     task_id: taskId,
     agent,
+    cursor: nextCursor,
     event_type: eventType,
     timestamp: nowIso(),
     ...details
@@ -69,6 +95,7 @@ function publishTaskEvent(taskId, agent, eventType, details = {}) {
   const eventFile = taskEventFile(taskId);
   appendJsonLine(eventFile, event);
   taskEventHub.publish(event);
+  watchEventBroadcaster.publish(event);
 
   publishCounter++;
   if (publishCounter % EVENT_ROTATION_INTERVAL === 0) {
@@ -661,105 +688,6 @@ server.tool(
           done: payload.done,
           source: "live-stream"
         }, null, 2)
-      }]
-    };
-  }
-);
-
-server.tool(
-  "watch_task_group",
-  {
-    tasks: z.array(z.object({
-      task_id: z.string(),
-      agent: OPTIONAL_AGENT_SCHEMA,
-      cursor: z.number().int().min(0).default(0)
-    })),
-    wait_ms: z.number().int().min(0).max(30000).default(5500)
-  },
-  async ({ tasks, wait_ms }) => {
-    const state = createTaskPanelState(tasks.map((task) => ({
-      task_id: sanitizeTaskId(task.task_id),
-      agent: task.agent ?? null,
-      cursor: task.cursor ?? 0
-    })));
-    const panel = await updateTaskPanelState(state, async (task) => {
-      const payload = await taskEventHub.waitForEvents(task.task_id, task.agent, {
-        cursor: task.cursor,
-        timeoutMs: wait_ms
-      });
-
-      if (payload.events.length === 0) {
-        const fallbackEvents = storedTerminalEvents(task.task_id, task.agent).map((entry, index) => ({
-          ...entry,
-          cursor: task.cursor + index + 1
-        }));
-        if (fallbackEvents.length > 0) {
-          return { events: fallbackEvents };
-        }
-      }
-
-      return { events: payload.events };
-    });
-
-    return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(panel, null, 2)
-      }]
-    };
-  }
-);
-
-server.tool(
-  "watch_task_group_blocking",
-  {
-    tasks: z.array(z.object({
-      task_id: z.string(),
-      agent: OPTIONAL_AGENT_SCHEMA,
-      cursor: z.number().int().min(0).default(0)
-    })),
-    wait_ms: z.number().int().min(0).max(30000).default(5500)
-  },
-  async ({ tasks, wait_ms }) => {
-    const result = await collectPanelSnapshotsUntilTerminal(
-      tasks.map((task) => ({
-        task_id: sanitizeTaskId(task.task_id),
-        agent: task.agent ?? null,
-        cursor: task.cursor ?? 0
-      })),
-      ({ tasks: nextTasks, waitMs }) => {
-        const state = createTaskPanelState(nextTasks.map((task) => ({
-          task_id: sanitizeTaskId(task.task_id),
-          agent: task.agent ?? null,
-          cursor: task.cursor ?? 0
-        })));
-
-        return updateTaskPanelState(state, async (task) => {
-          const payload = await taskEventHub.waitForEvents(task.task_id, task.agent, {
-            cursor: task.cursor,
-            timeoutMs: waitMs
-          });
-
-          if (payload.events.length === 0) {
-            const fallbackEvents = storedTerminalEvents(task.task_id, task.agent).map((entry, index) => ({
-              ...entry,
-              cursor: task.cursor + index + 1
-            }));
-            if (fallbackEvents.length > 0) {
-              return { events: fallbackEvents };
-            }
-          }
-
-          return { events: payload.events };
-        });
-      },
-      wait_ms
-    );
-
-    return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(result, null, 2)
       }]
     };
   }

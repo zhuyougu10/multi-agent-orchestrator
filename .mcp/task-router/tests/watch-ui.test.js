@@ -4,7 +4,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { parseTaskRefs, readEventBatch, renderWatchScreen } from "../lib/watch-ui.js";
+import {
+  connectWatchEventStream,
+  loadBufferedEvents,
+  onceWatchEvent,
+  parseTaskRefs,
+  readEventBatch,
+  renderWatchScreen
+} from "../lib/watch-ui.js";
+import { createStatusSnapshot, didObservedStatusChange } from "../lib/watch-observer.js";
 
 test("parseTaskRefs accepts task ids with optional agent suffix", () => {
   const refs = parseTaskRefs(["task-a", "task-b:gemini"]);
@@ -33,9 +41,86 @@ test("renderWatchScreen includes title and panel text", () => {
     tasks: [{ task_id: "task-a", status: "running" }],
     summary: { total: 1, running: 1, completed: 0, failed: 0 },
     all_terminal: false,
-    panel_text: "Tasks: 1 total"
+    panel_text: "任务: 1 | 运行中: 1 | 测试中: 0 | 已完成: 0 | 失败: 0"
   });
 
-  assert.match(screen, /Task Router Watch/);
-  assert.match(screen, /Tasks: 1 total/);
+  assert.match(screen, /任务路由面板/);
+  assert.match(screen, /任务: 1 \| 运行中: 1 \| 测试中: 0 \| 已完成: 0 \| 失败: 0/);
+});
+
+test("onceWatchEvent reads one pushed event from socket", async () => {
+  const event = await onceWatchEvent({ socketPath: "missing-socket" }).catch((error) => error);
+
+  assert.match(String(event.message || event), /connect/i);
+});
+
+test("loadBufferedEvents reads initial events once for watched tasks", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "watch-ui-buffered-"));
+  fs.writeFileSync(
+    path.join(tempDir, "task-a.jsonl"),
+    [
+      JSON.stringify({ task_id: "task-a", agent: "codex", event_type: "started" }),
+      JSON.stringify({ task_id: "task-a", agent: "gemini", event_type: "completed" })
+    ].join("\n") + "\n",
+    "utf8"
+  );
+
+  const events = loadBufferedEvents([
+    { task_id: "task-a", agent: "codex" }
+  ], {
+    eventFileForTask(taskId) {
+      return path.join(tempDir, `${taskId}.jsonl`);
+    }
+  });
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event.event_type, "started");
+});
+
+test("connectWatchEventStream yields pushed events from socket", async () => {
+  const { createWatchEventBroadcaster } = await import("../lib/watch-events-socket.js");
+  const broadcaster = createWatchEventBroadcaster({ socketPath: `watch-ui-stream-${process.pid}` });
+  await broadcaster.listen();
+
+  const stream = connectWatchEventStream({
+    socketPath: broadcaster.socketPath,
+    refs: [{ task_id: "task-stream", agent: null, cursor: 0 }]
+  });
+  await stream.ready;
+  const nextEvent = stream.next();
+
+  broadcaster.publish({
+    task_id: "task-stream",
+    agent: "codex",
+    cursor: 1,
+    event_type: "completed",
+    timestamp: "2026-03-20T00:00:00.000Z"
+  });
+
+  const received = await nextEvent;
+  assert.equal(received.done, false);
+  assert.equal(received.value.event_type, "completed");
+
+  await stream.return();
+  await broadcaster.close();
+});
+
+test("shouldRenderPanelUpdate returns false when status does not change", () => {
+  assert.equal(
+    didObservedStatusChange(
+      createStatusSnapshot([{ task_id: "task-a", agent: null, status: "running" }]),
+      [{ task_id: "task-a", agent: null, status: "running" }]
+    ),
+    false
+  );
+});
+
+test("shouldRenderPanelUpdate returns true when any task status changes", () => {
+  assert.equal(
+    didObservedStatusChange(
+      createStatusSnapshot([{ task_id: "task-a", agent: null, status: "running" }]),
+      [{ task_id: "task-a", agent: null, status: "testing" }]
+    ),
+    true
+  );
 });
